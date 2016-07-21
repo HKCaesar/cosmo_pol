@@ -1,0 +1,7 @@
+*.pz
+validation/
+tests/
+test_data/
+lookup_BK/
+plots/
+doc/

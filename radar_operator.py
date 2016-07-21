@@ -1,0 +1,526 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Sep  7 16:18:38 2015
+
+@author: wolfensb
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Aug  5 10:51:15 2015
+
+@author: wolfensb
+"""
+# Reload modules
+
+import sys
+from functools import partial
+import pathos.multiprocessing as mp
+import numpy as np
+
+import cosmo_pol.pycosmo as pycosmo
+from cosmo_pol.radar.pyart_wrapper import PyradRadop,PyradRadopVProf, RadarDisplay
+from cosmo_pol.utilities import cfg, utilities,tictoc
+from cosmo_pol.constants import constants
+from cosmo_pol.scatter import scattering_sz
+from cosmo_pol.interpolation import interpolation
+from cosmo_pol.doppler import doppler_sz
+from cosmo_pol.gpm import GPM_simulator
+from cosmo_pol.lookup import read_lut
+
+BASE_VARIABLES=['U','V','W','QR_v','QS_v','QG_v','RHO','T']
+BASE_VARIABLES_2MOM=['QH_v','QNH_v','QNR_v','QNS_v','QNG_v']
+
+class RadarOperator():
+    def __init__(self, options_file='./option_files/MXPOL_RHI.yml', diagnostic_mode=False):
+        # delete the module's globals
+        print('Reading options defined in options file')
+        cfg.init(options_file) # Initialize options with 'options_radop.txt'   
+        constants.update() # Update constants now that we now user config
+        self.config = cfg
+    
+        self.lut_sz = None
+
+        self.current_microphys_scheme = 1
+        self.dic_vars={}
+        self.N=0 # atmospheric refractivity
+        self.diagnostic_mode = diagnostic_mode # Diagnostic mode outputs all model variables (Q,T, etc) as well as the standard (radar) variables
+        
+    def set_lut(self, hydro_scheme):  
+        lut = read_lut.get_lookup_tables(hydro_scheme,cfg.CONFIG['radar']['frequency'])
+        self.lut_sz = lut
+        
+    def get_pos_and_time(self):
+        latitude=cfg.CONFIG['radar']['coords'][0]
+        longitude=cfg.CONFIG['radar']['coords'][1]
+        altitude=cfg.CONFIG['radar']['coords'][2]
+        time=self.dic_vars['T'].attributes['time'] # We could read any variable, T or others
+        
+        out={'latitude':latitude,'longitude':longitude,'altitude':altitude,\
+        'time':time}
+        
+        return out
+        
+    def get_config(self):
+        return cfg.CONFIG
+        
+    def set_config(self,options_file):
+        cfg.init(options_file) # Initialize options with 'options_radop.txt'   
+
+    def define_globals(self):
+        global diag_mode
+        diag_mode=self.diagnostic_mode
+        
+        global dic_vars
+        dic_vars=self.dic_vars
+        
+        global N
+        N=self.N
+        
+        global lut_sz
+        lut_sz = self.lut_sz
+
+        return dic_vars, N, lut_sz, diag_mode
+
+    def load_model_file(self, filename, cfilename=''):
+        file_h=pycosmo.open_file(filename)
+        vars_to_load=BASE_VARIABLES
+    
+        # Check if necessary variables are present in file
+        
+        base_vars_ok = pycosmo.check_if_variables_in_file(file_h,['P','T','QV','QR','QC','QI','QS','QG','U','V','W'])
+        two_mom_vars_ok = pycosmo.check_if_variables_in_file(file_h,['QH','QNH','QNR','QNS','QNG'])
+        
+        if cfg.CONFIG['refraction']['scheme']==2:
+            if pycosmo.check_if_variables_in_file(file_h,['T','P','QV']):
+                vars_to_load.extend('N')
+            else:
+                print('Necessary variables for computation of atm. refractivity: ',
+                      'Pressure, Water vapour mass density and temperature',
+                      'were not found in file. Using 4/3 method instead.')
+                cfg.CONFIG['refraction_method']='4/3'
+                
+        if cfg.CONFIG['doppler']['turbulence_correction']: # To consider the effect of turbulence we need to get the eddy dissipation rate as well 
+            if pycosmo.check_if_variables_in_file(file_h,['EDR']):
+                vars_to_load.extend('EDR')
+            else:
+                print('Necessary variable for correction of turbulence broadening: ',
+                      'eddy dissipitation rate',
+                      'was not found in file. No correction will be done')
+                cfg.CONFIG['add_turbulence_effect']=False
+        
+        if not base_vars_ok:
+            print('Not all necessary variables could be found in file')
+            print('For 1-moment scheme, the COSMO file must contain:')
+            print('Temperature, Pressure, U-wind component, V-wind component,',
+                  'W-wind component, and mass-densities (Q) for Vapour, Rain, Snow,',
+                  ' Graupel, Ice cloud and Cloud water')
+            print('For 2-moment scheme, the COSMO file must AS WELL contain:')      
+            print('Number densitities (QN) for Rain, Snow, Graupel and Hail ',
+                    'as well as mass density (Q) of hail')
+            sys.exit()
+        elif base_vars_ok and not two_mom_vars_ok:
+            print('Using 1-moment scheme')
+            cfg.CONFIG['microphysics']['scheme'] = 1
+        elif base_vars_ok and two_mom_vars_ok:
+            vars_to_load.extend(BASE_VARIABLES_2MOM)
+            print('Using 2-moment scheme')
+            cfg.CONFIG['microphysics']['scheme'] = 2
+            
+        # Read variables from GRIB file
+        loaded_vars=pycosmo.get_variables(file_h,vars_to_load,get_proj_info=True,shared_heights=True,assign_heights=True,c_file=cfilename)
+        self.dic_vars=loaded_vars #  Assign to class
+        if 'N' in loaded_vars.keys():
+            self.N=loaded_vars['N']
+            self.dic_vars.pop('N',None) # Remove N from the variable dictionnary (we won't need it there)
+        file_h.close()
+        print('-------done------')
+        
+        # Check if lookup tables are deprecated
+        if self.lut_sz == None or self.current_microphys_scheme != cfg.CONFIG['microphysics']['scheme']:
+            print('Loading lookup-tables for current specification')
+            self.set_lut(cfg.CONFIG['microphysics']['scheme'])
+        del loaded_vars
+    
+    def get_VPROF(self):
+        # Check if model file has been loaded
+        if self.dic_vars=={}:
+            print('No model file has been loaded! Aborting...')
+            return
+            
+        if cfg.CONFIG['radar']['type'] != 'ground':
+            print('RHI profiles only possible for ground radars, please use\n'+\
+                 ' get_GPM_swath instead')
+            return []
+        # Needs to be done in order to deal with Multiprocessing's annoying limitations
+        global dic_vars, N, lut_sz, diag_mode
+        dic_vars, N, lut_sz, diag_mode=self.define_globals()
+        # Define list of angles that need to be resolved
+
+        # Define  ranges
+        rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
+                          cfg.CONFIG['radar']['range'],
+                          cfg.CONFIG['radar']['radial_resolution'])
+        
+        # Initialize computing pool
+        list_GH_pts = interpolation.get_profiles_GH(dic_vars,0.,90.,N=N)
+        doppler_beam = doppler_sz.get_doppler_velocity(list_GH_pts,lut_sz)
+        pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
+
+        beam = utilities.combine_beams((doppler_beam, pol_beam))
+        # Threshold at given sensitivity
+        beam = utilities.cut_at_sensitivity(beam,cfg.CONFIG['radar']['sensitivity'])
+
+        if diag_mode:
+            beam=utilities.combine_beams((beam, interpolation.integrate_GH_pts(list_GH_pts)))
+            
+        del dic_vars
+        del N
+        del lut_sz
+                
+        simulated_sweep={'ranges':rranges,'pos_time':self.get_pos_and_time(),'data':beam}
+        
+        pyrad_instance=PyradRadopVProf(simulated_sweep)
+        return  pyrad_instance
+        
+        
+    def get_PPI(self, elevations, az_step=-1, az_start=0, az_stop=359):
+        
+        # Check if model file has been loaded
+        if self.dic_vars=={}:
+            print('No model file has been loaded! Aborting...')
+            return
+            
+        # Check if list of elevations is scalar
+        if np.isscalar(elevations):
+            elevations=[elevations]
+            
+        if cfg.CONFIG['radar']['type'] != 'ground':
+            print('PPI profiles only possible for ground radars, please use')
+            print(' get_GPM_swath instead')
+            return []
+        # Needs to be done in order to deal with Multiprocessing's annoying limitations
+        global dic_vars, N, lut_sz, diag_mode
+        dic_vars, N, lut_sz, diag_mode=self.define_globals()
+        # Define list of angles that need to be resolved
+        if az_step==-1:
+            az_step=cfg.CONFIG['radar']['3dB_beamwidth']
+            
+        # Define azimuths and ranges
+        if az_start>az_stop:
+            azimuths=np.hstack((np.arange(az_start,360.,az_step),np.arange(0,az_stop+az_step,az_step)))
+        else:
+            azimuths=np.arange(az_start,az_stop+az_step,az_step)
+            
+        # Define  ranges
+        rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
+                          cfg.CONFIG['radar']['range'],
+                          cfg.CONFIG['radar']['radial_resolution'])  
+           
+        # Initialize computing pool
+        pool = mp.ProcessingPool(processes = mp.cpu_count(),maxtasksperchild=1)
+        
+        list_sweeps=[]
+        
+        def worker(elev, azimuth):#
+            print azimuth
+            list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
+            doppler_beam = doppler_sz.get_doppler_velocity(list_GH_pts,lut_sz)
+            pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
+            output=utilities.combine_beams((doppler_beam, pol_beam))
+            
+            if diag_mode:
+                output=utilities.combine_beams((output, interpolation.integrate_GH_pts(list_GH_pts)))
+            return output
+        
+        tictoc.tic()
+        for e in elevations: # Loop on the elevations
+            func=partial(worker,e)
+            list_beams = pool.map(func,azimuths)
+            list_sweeps.append(list_beams)
+
+
+        pool.clear()
+        pool.close()
+        pool.join()
+        
+        del dic_vars
+        del N
+        del lut_sz
+        
+        # Threshold at given sensitivity
+        list_sweeps=utilities.cut_at_sensitivity(list_sweeps)
+            
+        simulated_sweep={'elevations':elevations,'azimuths':azimuths,'ranges':rranges,'pos_time':self.get_pos_and_time(),'data':list_sweeps}
+        
+        pyrad_instance=PyradRadop('ppi',simulated_sweep)
+        
+        return pyrad_instance
+        
+    def get_RHI(self, azimuths, elev_step=-1, elev_start=0, elev_stop=90):
+        # Check if model file has been loaded
+        if self.dic_vars=={}:
+            print('No model file has been loaded! Aborting...')
+            return
+            
+        # Check if list of azimuths is scalar
+        if np.isscalar(azimuths):
+            azimuths=[azimuths]
+            
+        if cfg.CONFIG['radar_type'] != 'ground':
+            print 'RHI profiles only possible for ground radars, please use'
+            print ' get_GPM_swath instead'
+            return []
+        # Needs to be done in order to deal with Multiprocessing's annoying limitations
+        global dic_vars, N, lut_sz, diag_mode
+        dic_vars, N, lut_sz, diag_mode=self.define_globals()
+        
+        # Define list of angles that need to be resolved
+        if elev_step==-1:
+            elev_step=cfg.CONFIG['radar']['3dB_beamwidth']
+        
+        # Define elevation and ranges
+        elevations=np.arange(elev_start,elev_stop+elev_step,elev_step)
+        
+        # Define  ranges
+        rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
+                          cfg.CONFIG['radar']['range'],
+                          cfg.CONFIG['radar']['radial_resolution'])
+                          
+        # Initialize computing pool
+        pool = mp.ProcessingPool(processes = mp.cpu_count(),maxtasksperchild=1)
+        
+        list_sweeps=[]
+
+        def worker(azimuth, elev):
+            list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
+            doppler_beam = doppler_sz.get_doppler_velocity(list_GH_pts,lut_sz)
+            pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
+            output=utilities.combine_beams((doppler_beam, pol_beam))
+
+            if diag_mode:
+                output=utilities.combine_beams((output, interpolation.integrate_GH_pts(list_GH_pts)))
+            return output
+                
+        for a in azimuths: # Loop on the o
+            func=partial(worker,a) # Partial function
+            list_beams = pool.map(func,elevations)
+            list_sweeps.append(list_beams)
+            
+        pool.clear()
+        pool.close()   
+        pool.join()
+        
+        del dic_vars
+        del N
+        del lut_sz
+                
+        # Threshold at given sensitivity
+        list_sweeps=utilities.cut_at_sensitivity(list_sweeps)
+        
+        simulated_sweep={'elevations':elevations,'azimuths':azimuths,'ranges':rranges,'pos_time':self.get_pos_and_time(),'data':list_sweeps}
+        
+        pyrad_instance=PyradRadop('rhi',simulated_sweep)
+        return  pyrad_instance
+        
+    def get_GPM_swath(self, GPM_file,band='Ku'):
+        # Check if model file has been loaded
+        if self.dic_vars=={}:
+            print('No model file has been loaded! Aborting...')
+            return
+            
+        if band == 'Ku':
+            cfg.CONFIG['radar']['frequency']=13.6
+        elif band == 'Ka':
+            cfg.CONFIG['radar']['frequency']=35.6
+
+        # Sensitivity is 12 dBZ for GPM            
+        cfg.CONFIG['radar']['sensitivity'] = 12
+        cfg.CONFIG['radar']['type'] = 'GPM'
+        
+        # Needs to be done in order to deal with Multiprocessing's annoying limitations
+        global dic_vars, N, lut_sz, diag_mode
+        dic_vars, N, lut_sz, diag_mode=self.define_globals()
+        
+        az,elev,rang,coords_GPM = GPM_simulator.get_GPM_angles(GPM_file,band)
+        # Initialize computing pool
+        pool = mp.ProcessingPool(processes = mp.cpu_count(),maxtasksperchild=1)
+        
+        def worker(params):
+            azimuth=params[0]
+            elev=params[1]
+            cfg.CONFIG['radar']['range']=params[2]
+            cfg.CONFIG['radar']['coords']=[params[3],params[4],params[5]]
+            
+            list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
+            pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
+            
+            return pol_beam
+
+        dim_swath = az.shape
+        
+        list_beams=[]
+        for i in range(dim_swath[0]):
+            print 'running slice '+str(i)
+            # Update radar position
+            c0=np.repeat(coords_GPM[i,0],len(az[i]))
+            c1=np.repeat(coords_GPM[i,1],len(az[i]))
+            c2=np.repeat(coords_GPM[i,2],len(az[i]))
+            
+            list_beams.extend(pool.map(worker,zip(az[i],elev[i],rang[i],c0,c1,c2)))
+            
+        pool.clear()
+        pool.close()   
+        pool.join()
+        
+        del dic_vars
+        del N
+        del lut_sz
+        
+        # Threshold at given sensitivity
+        list_beams = utilities.cut_at_sensitivity(list_beams)
+        import pickle
+        pickle.dump(list_beams,open('./test_gpm','wb'))
+        list_beams_formatted = GPM_simulator.SimulatedGPM(list_beams, dim_swath, band)
+        return list_beams_formatted
+   
+   
+   
+if __name__=='__main__':
+
+    
+    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
+    cosmo_file = '/ltedata/COSMO/GPM_FULL/2014-08-12-18-26/lfff00122600'
+    #
+    #
+    a  = RadarOperator()
+    a.load_model_file(cosmo_file)
+    swath = a.get_GPM_swath(gpm_file)
+
+    from cosmo_pol.gpm.GPM_simulator import compare_operator_with_GPM
+    a,b,c = compare_operator_with_GPM(swath,gpm_file)
+
+
+#    from cosmo_pol.radar import small_radar_db, pyart_wrapper
+##    import glob
+#    
+#    files_c = pycosmo.get_model_filenames('/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM')
+#    a=RadarOperator(options_file='./option_files/MXPOL_PPI.yml', diagnostic_mode=True) 
+#    a.load_model_file(files_c['h'][10],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
+#    r=a.get_PPI(1)
+#     
+#    display = RadarDisplay(r, shift=(0.0, 0.0))
+#    display.plot('ZDR', 0, 150000,colorbar_flag=True,title="ZH (radar)",mask_outside = True)
+#    
+#    time = pycosmo.get_time_from_COSMO_filename(files_c['h'][10])
+#    
+#    aaaa = small_radar_db.CH_RADAR_db()
+#    files = aaaa.query(date=[str(time)],radar='D',angle=1)
+#    rad = pyart_wrapper.PyradCH(files[0][0].rstrip(),False)
+#    display = RadarDisplay(rad, shift=(0.0, 0.0)) 
+#    display.plot('ZDR', 0, 150000,colorbar_flag=True,title="ZH (radar)",vmin=0,mask_outside = True)
+
+#    for i,f in enumerate(files_c['h'][0::10]):
+#        time = pycosmo.get_time_from_COSMO_filename(f)
+#        aaaa = small_radar_db.CH_RADAR_db()
+#        files = aaaa.query(date=[str(time)],radar='D',angle=1)
+#        
+#        
+#        rad = pyart_wrapper.PyradCH(files[0].rstrip(),False)
+#    
+#        rad.correct_velocity()
+#        display = RadarDisplay(rad, shift=(0.0, 0.0))
+#    
+#        plt.figure(figsize=(14,6))
+#        plt.subplot(1,2,1)
+#        display.plot('Z', 0, 150000,colorbar_flag=True,title="ZH (radar)",vmin=0,mask_outside = True)
+#        display.set_limits(xlim=(-150,150),ylim=(-150,150))
+#        
+#        plt.subplot(1,2,2)
+#        display.plot('V_corr', 0, 150000,colorbar_flag=True,title="Mean Doppler velocitiy (radar)",mask_outside = True,vmin=-25,vmax=25)
+#        display.set_limits(xlim=(-150,150),ylim=(-150,150))    
+#        
+#        plt.savefig('example_ppi_radar_'+str(i)+'.png',dpi=200,bbox_inches='tight')
+#        
+#        #
+#        
+#        cfg.CONFIG['doppler']['scheme']=1
+#        a.load_model_file(f,cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
+#        r,aa=a.get_PPI(1)
+#    
+#        fig = plt.figure()
+#    
+#        display = RadarDisplay(r, shift=(0.0, 0.0))
+#        plt.figure(figsize=(14,12))
+#        plt.subplot(2,2,1)
+#        display.plot('ZH', 0, 150000,colorbar_flag=True,title="ZH")
+#        plt.subplot(2,2,2)
+#        display.plot('RVel', 0, 150000,colorbar_flag=True,title="Mean Doppler velocity")
+#        plt.subplot(2,2,3)
+#        display.plot('ZDR', 0,150000, colorbar_flag=True,title="Diff. reflectivity",vmax=3)
+#        plt.subplot(2,2,4)
+#        display.plot('KDP', 0, 150000,colorbar_flag=True,title="Spec. diff. phase",vmax=0.4)        
+#        plt.savefig('example_ppi_'+str(i)+'.png',dpi=200,bbox_inches='tight')
+#        
+#    r=a.get_GPM_swath('./GPM_files/2014-08-13-02-28.HDF5','Ku')
+#    
+#    ZH_ground,ZH_everywhere=compare_operator_with_GPM(r,'./GPM_files/2014-08-13-02-28.HDF5')
+#    import pickle 
+##    pickle.dump(a,open('ex_beams.txt','wb'))
+##    pickle.dump(b,open('ex_output_GPM.txt','wb'))
+#    g='./GPM_files/2014-08-13-02-28.HDF5'
+#    import h5py
+#    group='NS'
+#    gpm_f=h5py.File(g,'r')    
+#    lat_2D=gpm_f[group]['Latitude'][:]
+#    lon_2D=gpm_f[group]['Longitude'][:]
+
+
+    
+#    a.load_model_file('./cosmo_files/GRIB/2014-05-13-20.grb')
+#    a.load_model_file('/ltedata/COSMO/case2014040802_PAYERNE_analysis_ONEMOM/lfsf00105000')
+#
+#    results=a.get_PPI(2)
+#    o=polar_to_cartesian_PPI(results[0],results[1])
+#    plt.contourf(o[2]['ZH'],levels=np.arange(0,40,5),extend='both')
+#    c=10*np.log10(o[2]['ZH'])
+#    plt.contourf(c,levels=np.arange(0,40,1),extend='max')
+#    c=np.log10(o[2]['KDP'])
+#    plt.contourf(c,extend='max')
+#    plt.colorbar()
+#    cfg.CONFIG['attenuation_correction']=False
+#    results=a.get_PPI(5)
+#    o=polar_to_cartesian_PPI(results[0],results[1])    
+#    d=10*np.log10(o[2]['ZH'])
+#    plt.figure()
+#    plt.contourf(d-c,levels=np.arange(0,2,0.1))    
+#    results=a.get_PPI(5)
+#    o=polar_to_cartesian_PPI(results[0],results[1])
+#    plt.figure()
+#    plt.contourf(c,levels=np.arange(0,40,0.5),extend='both')
+#
+#    d=10*np.log10(o[2]['ZH'])
+#    plt.figure()
+#    plt.contourf(d,levels=np.arange(0,40,0.5),extend='both')
+#    
+#    plt.figure()
+#    plt.contourf(d-c)
+
+#    print np.nansum(np.array([l.values['ZH'] for l in list_beams]))
+#    cPickle.dump((elev,list_beams),open('test.p','w'))
+
+#    o=polar_to_cartesian_PPI(az,list_beams)
+#    plt.figure()
+#    plt.imshow(o[2]['ZH'])
+#    cPickle.dump((az,list_beams),open('test.p','w'))
+    
+#    a=cPickle.load(open('test.p','r'))
+#    o=polar_to_cartesian_PPI(az,list_beams)
+#    plt.imshow(10*np.log10(o[2]['ZH']))
+#    plt.figure()
+#    tic()
+#    az,list_beams=a.get_PPI(20)
+#    toc()
+#    o=polar_to_cartesian_PPI(az,list_beams)
+#    plt.imshow(10*np.log10(o[2]['ZH']))
+#    plt.colorbar()
