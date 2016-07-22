@@ -61,7 +61,7 @@ def ref_ODE_s(range_vec, elevation_angle, coords_radar, N):
     # Get earth radius at radar latitude
     RE=get_earth_radius(coords_radar[0])
     
-    if cfg.CONFIG['radar_type']  == 'ground':
+    if cfg.CONFIG['radar']['type']  == 'ground':
         # Invert to get from ground to top of model domain
         h=h[::-1]
         n_vert_profile=n_vert_profile[::-1] # Refractivity
@@ -123,16 +123,17 @@ def ref_4_3(range_vec, elevation_angle, coords_radar):
     return S.astype('float32'),H.astype('float32'), E.astype('float32')*rad2deg
     
 def get_GPM_refraction(elevation):
-    latitude=cfg.CONFIG['radar']['coords'][0]
-    altitude_radar=cfg.CONFIG['radar']['coords'][2]
-    max_range=cfg.CONFIG['radar']['range']
+    latitude = cfg.CONFIG['radar']['coords'][0]
+    altitude_radar = cfg.CONFIG['radar']['coords'][2]
+    max_range = cfg.CONFIG['radar']['range']
+    radial_resolution = cfg.CONFIG['radar']['radial_resolution']
     
     elev_rad=elevation*deg2rad
     ke=1
     maxHeightCOSMO=constants.MAX_HEIGHT_COSMO
     RE=get_earth_radius(latitude)
     # Compute maximum range to target (using cosinus law in the triangle earth center-radar-target)
-    range_vec=np.arange(constants.GPM_RADIAL_RES/2,max_range,constants.GPM_RADIAL_RES)
+    range_vec=np.arange(radial_resolution/2.,max_range,radial_resolution)
 
     H=-(np.sqrt(range_vec**2 + (ke*RE)**2+2*range_vec*ke*RE*np.sin(elev_rad))-ke*RE)+altitude_radar
     

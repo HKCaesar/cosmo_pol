@@ -330,13 +330,17 @@ class RadarOperator():
             return
             
         if band == 'Ku':
-            cfg.CONFIG['radar']['frequency']=13.6
+            cfg.CONFIG['radar']['frequency'] = 13.6
         elif band == 'Ka':
-            cfg.CONFIG['radar']['frequency']=35.6
+            cfg.CONFIG['radar']['frequency'] = 35.6
 
-        # Sensitivity is 12 dBZ for GPM            
-        cfg.CONFIG['radar']['sensitivity'] = 12
+        # Assign configuration dic based on GPM specificiations
+        cfg.CONFIG['radar']['sensitivity'] = constants.GPM_SENSITIVITY
         cfg.CONFIG['radar']['type'] = 'GPM'
+        cfg.CONFIG['radar']['radial_resolution'] = \
+            constants.GPM_RADIAL_RES_KA if band == 'Ka' \
+                else constants.GPM_RADIAL_RES_KU
+        
         
         # Needs to be done in order to deal with Multiprocessing's annoying limitations
         global dic_vars, N, lut_sz, diag_mode
@@ -390,12 +394,12 @@ if __name__=='__main__':
 
     
     gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
-    cosmo_file = '/ltedata/COSMO/GPM_FULL/2014-08-12-18-26/lfff00122600'
+    cosmo_file = '/ltedata/COSMO/GPM_1MOM/2014-08-13-02-28.grb'
     #
     #
     a  = RadarOperator()
     a.load_model_file(cosmo_file)
-    swath = a.get_GPM_swath(gpm_file)
+    swath = a.get_GPM_swath(gpm_file,'Ka')
 
     from cosmo_pol.gpm.GPM_simulator import compare_operator_with_GPM
     a,b,c = compare_operator_with_GPM(swath,gpm_file)

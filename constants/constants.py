@@ -57,8 +57,11 @@ class Constant_class(object):
                                       cfg.CONFIG['radar']['range'], 
                                       cfg.CONFIG['radar']['radial_resolution'])
                 
-            self.GPM_SN_RATIO=14.5 # Toyoshima et al, 2015
-            self.GPM_RADIAL_RES=125
+            self.GPM_SENSITIVITY = 12 # Toyoshima et al, 2015
+            self.GPM_RADIAL_RES_KA = 250
+            self.GPM_RADIAL_RES_KU = 125
+            self.GPM_NO_BINS_KA = 88
+            self.GPM_NO_BINS_KU = 176
             
     def update(self):
         self.__init__()

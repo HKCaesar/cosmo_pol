@@ -20,11 +20,11 @@ maxHeightCOSMO=35000
 
 def get_group(band):
     if band == 'Ku':
-        group='NS'
+        group = 'NS'
     elif band == 'Ka':
-        group='HS'
+        group = 'HS'
     elif band == 'both':
-        group='MS'
+        group = 'MS'
     return group
     
 class SimulatedGPM():
@@ -87,18 +87,35 @@ class SimulatedGPM():
         
 
 def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
+    ''' Inputs:
+        -simulated_GPM_swath : GPM swath (output of the radar operator)
+        -GPM_filename        : Path of the corresponding GPM scan
+    
+        Outputs:
+        -ZH_ground           : ZH measured and simulated at the ground
+        -ZH_everywhere       : ZH measured and simulated everywhere
+        -diff                : number of bins between clutter free GPM bin and 
+                               last simulated bin
+    '''
+    
     gpm_f=h5py.File(GPM_filename,'r')    
     
-    group=get_group(simulated_GPM_swath.band)
+    band = simulated_GPM_swath.band
+    group = get_group(band)
         
     # Get latlon
-    lat_simul=simulated_GPM_swath.lats
-    lon_simul=simulated_GPM_swath.lons
+    lat_simul = simulated_GPM_swath.lats
+    lon_simul = simulated_GPM_swath.lons
         
     # First bin without clutter
     binNoClutter=gpm_f[group]['PRE']['binClutterFreeBottom'][:]
-    # 176 = number of GPM levels
-    diff=(176-binNoClutter)-simulated_GPM_swath.bin_surface
+    # Get # of GPM bins
+    GPM_N_bins =  \
+            constants.GPM_NO_BINS_KA if band == 'Ka' \
+                else constants.GPM_NO_BINS_KU
+                
+    diff = (GPM_N_bins - binNoClutter) - simulated_GPM_swath.bin_surface
+            
     diff[diff<0]=0
     diff=diff.astype(int)
 
@@ -122,7 +139,6 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     k,j = np.meshgrid(np.arange(M),np.arange(N)) # Create 2D index
     
     ZH_s_grd=ZH_s_dBZ[j,k,diff]
-#    ZH_s_grd[ZH_s_grd<constants.GPM_sn_ratio]=float('nan')
     
     ZH_ground={}
     ZH_ground['measured']=ZH_m_grd
@@ -133,7 +149,7 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     # EVERYWHERE
     ##########################################################################
 #    has_clutter_bool=np.zeros((K,))    
-    K=np.min([K,ZH_gpm.shape[2]])
+    K = np.min([K,ZH_gpm.shape[2]])
 
     ZH_m_everywhere=np.zeros((N,M,K))   
     lat_everywhere=np.zeros((N,M,K))   
@@ -141,8 +157,8 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     
     ZH_s_everywhere=ZH_s_dBZ 
     
-    ZH_gpm=gpm_f[group]['SLV']['zFactorCorrected'][:]
-    ZH_gpm[ZH_gpm<-1000]=float('nan') # Put Nan where data is missing
+    ZH_gpm = gpm_f[group]['SLV']['zFactorCorrected'][:]
+    ZH_gpm[ZH_gpm<-1000] = float('nan') # Put Nan where data is missing
     
     
     for i in range(K):
@@ -171,23 +187,23 @@ def get_GPM_angles(GPM_file,band):
 
     group=get_group(band)
         
-    gpm_f=h5py.File(GPM_file,'r')    
-    lat_2D=gpm_f[group]['Latitude'][:]
-    lon_2D=gpm_f[group]['Longitude'][:]
+    gpm_f = h5py.File(GPM_file,'r')    
+    lat_2D = gpm_f[group]['Latitude'][:]
+    lon_2D = gpm_f[group]['Longitude'][:]
 #    altitudes_2D=gpm_f[group]['PRE']['elevation'][:]
     
-    center_lat_sc=gpm_f[group]['navigation']['scLat'][:]
-    center_lon_sc=gpm_f[group]['navigation']['scLon'][:]
-    altitudes_sc=gpm_f[group]['navigation']['dprAlt'][:]
+    center_lat_sc = gpm_f[group]['navigation']['scLat'][:]
+    center_lon_sc = gpm_f[group]['navigation']['scLon'][:]
+    altitudes_sc = gpm_f[group]['navigation']['dprAlt'][:]
 
-    pos_sc=gpm_f[group]['navigation']['scPos'][:]
+    pos_sc = gpm_f[group]['navigation']['scPos'][:]
     
 #    elev_ang=90-gpm_f[group]['PRE']['localZenithAngle'][:]
 #    ellips_offsets=gpm_f[group]['PRE']['ellipsoidBinOffset'][:]
     
-    azimuths=np.zeros(lat_2D.shape)
-    ranges=np.zeros(lat_2D.shape)
-    elevations=np.zeros(lon_2D.shape)    
+    azimuths = np.zeros(lat_2D.shape)
+    ranges = np.zeros(lat_2D.shape)
+    elevations = np.zeros(lon_2D.shape)    
     
     # Projection from lat/long/alt to eced
     ecef = pp.Proj(proj='geocent', ellps='WGS84', datum='WGS84')
@@ -223,29 +239,29 @@ def get_earth_radius(latitude):
     b=6356.7523*1000
     return np.sqrt(((a**2*np.cos(latitude))**2+(b**2*np.sin(latitude))**2)/((a*np.cos(latitude))**2+(b*np.sin(latitude))**2))
     
-def get_GPM_refraction2(latitude, altitude_radar, max_range, elevation):
-    deg2rad=np.pi/180.
-    rad2deg=180./np.pi
-    
-    elev_rad=-elevation*deg2rad
-    ke=1
-    maxHeightCOSMO=constants.MAX_HEIGHT_COSMO
-    RE=get_earth_radius(latitude)
-    # Compute maximum range to target (using cosinus law in the triangle earth center-radar-target)
-    range_vec=np.arange(constants.GPM_RADIAL_RES/2,max_range,constants.GPM_RADIAL_RES)
-
-    H=-(np.sqrt(range_vec**2 + (ke*RE)**2+2*range_vec*ke*RE*np.sin(elev_rad))-ke*RE)+altitude_radar
-    
-    S=ke*RE*np.arcsin((range_vec*np.cos(elev_rad))/(ke*RE+H))
-    E=elevation-np.arctan(range_vec*np.cos(elev_rad)/(range_vec*np.sin(elev_rad)+ke*RE+altitude_radar))*rad2deg
+#def get_GPM_refraction2(latitude, altitude_radar, max_range, elevation):
+#    deg2rad=np.pi/180.
+#    rad2deg=180./np.pi
+#    
+#    elev_rad=-elevation*deg2rad
+#    ke=1
+#    maxHeightCOSMO=constants.MAX_HEIGHT_COSMO
+#    RE=get_earth_radius(latitude)
+#    # Compute maximum range to target (using cosinus law in the triangle earth center-radar-target)
+#    range_vec=np.arange(constants.GPM_RADIAL_RES/2,max_range,constants.GPM_RADIAL_RES)
 #
-    in_lower_atm=[H<maxHeightCOSMO]
-
-    H = H[in_lower_atm]
-    S = S[in_lower_atm]
-    E = E[in_lower_atm]
-
-    return S.astype('float32'),H.astype('float32'), E.astype('float32')
+#    H=-(np.sqrt(range_vec**2 + (ke*RE)**2+2*range_vec*ke*RE*np.sin(elev_rad))-ke*RE)+altitude_radar
+#    
+#    S=ke*RE*np.arcsin((range_vec*np.cos(elev_rad))/(ke*RE+H))
+#    E=elevation-np.arctan(range_vec*np.cos(elev_rad)/(range_vec*np.sin(elev_rad)+ke*RE+altitude_radar))*rad2deg
+##
+#    in_lower_atm=[H<maxHeightCOSMO]
+#
+#    H = H[in_lower_atm]
+#    S = S[in_lower_atm]
+#    E = E[in_lower_atm]
+#
+#    return S.astype('float32'),H.astype('float32'), E.astype('float32')
     
 def test_accuracy(GPM_file,band):
     import pyproj

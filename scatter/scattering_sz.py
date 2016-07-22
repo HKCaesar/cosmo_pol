@@ -21,9 +21,9 @@ def get_radar_observables(list_beams, lut_sz):
     hydrom_scheme = cfg.CONFIG['microphysics']['scheme']
     
     # Get dimensions
-    num_beams=len(list_beams) # Number of beams
-    idx_0=int(num_beams/2) # Index of central beam
-    len_beams=max([len(l.dist_profile) for l in list_beams]) # Beam length
+    num_beams = len(list_beams) # Number of beams
+    idx_0 = int(num_beams/2) # Index of central beam
+    len_beams = len(list_beams[idx_0].dist_profile)  # Beam length
     
     # Initialize
     
@@ -50,7 +50,12 @@ def get_radar_observables(list_beams, lut_sz):
         dD = list_D[1] - list_D[0]
         
         for i,beam in enumerate(list_beams[0:]): # Loop on subbeams
-            
+        
+            # For GPM some sub-beams are longer than the main beam, so we discard
+            # the "excess" part
+            for k in beam.values.keys():
+                beam.values[k] = beam.values[k][0:len_beams-1]
+                
             valid_data = beam.values['Q'+h+'_v'] > 0
             
             elev=beam.elev_profile
@@ -134,9 +139,9 @@ def get_radar_observables(list_beams, lut_sz):
     rad_obs['AV'] = AV    
     
     # This mask serves to tell if the measured point is ok, or below topo or above COSMO domain
-    mask=np.zeros(len_beams,)
+    mask = np.zeros(len_beams-1,)
     for i,beam in enumerate(list_beams):
-        mask=sum_arr(mask,beam.mask) # Get mask of every Beam
+        mask = sum_arr(mask,beam.mask[0:len_beams-1]) # Get mask of every Beam
         
     # Larger than 1 means that every Beam is below TOPO, smaller than 0 that at least one Beam is above COSMO domain    
     mask/=num_beams 
@@ -144,7 +149,6 @@ def get_radar_observables(list_beams, lut_sz):
     
     
     # Finally get vectors of distances, height and lat/lon at the central beam
-    idx_0 = int(len(list_beams)/2)
     heights_radar = list_beams[idx_0].heights_profile
     distances_radar = list_beams[idx_0].dist_profile
     lats = list_beams[idx_0].lats_profile
