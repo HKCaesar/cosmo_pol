@@ -1,7 +1,7 @@
 *.pz
 *.py~
 *.pyc
-validation/
+*.npy
 tests/
 test_data/
 lookup_BK/

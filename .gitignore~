@@ -1,5 +1,6 @@
 *.pz
 *.py~
+*.pyc
 validation/
 tests/
 test_data/

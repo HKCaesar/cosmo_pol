@@ -31,7 +31,7 @@ TEMPERATURES_LIQ = range(262,316,2)
 TEMPERATURES_SOL = range(200,278,2)
 
 FREQUENCIES=[2.7,4.15,5.6,7.7,9.8,11.7,13.6,24.6,35.6]    
-
+FREQUENCIES = [13.6,24.6,35.6]    
 NUM_DIAMETERS=1024
 
 HYDROM_TYPES=['R','S','G','H'] # Rain, snow, graupel and hail
