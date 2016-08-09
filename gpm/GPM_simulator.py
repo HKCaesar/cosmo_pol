@@ -125,10 +125,8 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     # AT GROUND
     ##########################################################################
     # ZH measured at ground
-    ZH_m_grd=gpm_f[group]['SLV']['zFactorCorrectedNearSurface'][:]
-    ZH_m_grd[ZH_m_grd<-1000]=float('nan')
 
-    ZH_gpm=gpm_f[group]['SLV']['zFactorCorrected'][:]
+    ZH_gpm=gpm_f[group]['PRE']['zFactorMeasured'][:]
     ZH_gpm[ZH_gpm<-1000]=float('nan') # Put Nan where data is missing
 
     ZH_s_dBZ=10*np.log10(simulated_GPM_swath.data['ZH'])
@@ -138,6 +136,8 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     
     k,j = np.meshgrid(np.arange(M),np.arange(N)) # Create 2D index
     
+    ZH_m_grd=ZH_gpm[j,k,binNoClutter]
+    ZH_m_grd[ZH_m_grd<-1000]=float('nan')
     ZH_s_grd=ZH_s_dBZ[j,k,diff]
     
     ZH_ground={}

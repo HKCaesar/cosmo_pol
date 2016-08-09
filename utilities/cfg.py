@@ -40,6 +40,7 @@ DEFAULTS={
         'nh_GH':3,\
         'n_gaussians':7,\
         'antenna_diagram':'',\
+        'weight_threshold':1.,\
         'nr_GH':7,\
         'na_GL':7},\
     'doppler':
@@ -71,6 +72,7 @@ VALID_VALUES={
         'nv_GH':np.arange(1,31,2),\
         'nh_GH':np.arange(1,31,2),\
         'n_gaussians':np.arange(1,13,2),\
+        'weight_threshold':[0.,'to',1.],\
         'nr_GH':np.arange(1,31,2),\
         'na_GL':np.arange(1,31,2)},\
     'doppler':
@@ -132,7 +134,7 @@ def init(options_file):
             CONFIG = yaml.load(ymlfile)
     except:
         CONFIG = DEFAULTS
-        print('Could not find '+options_file+' file, using default options')
+        print('Could not find or read '+options_file+' file, using default options')
         return
     # Parsing values
     for section in DEFAULTS:

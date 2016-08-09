@@ -60,6 +60,7 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
     list_variables=dic_variables.values()
     keys=dic_variables.keys()
     
+    # Calculate quadrature weights
     if integration_scheme == 1: # Classical single gaussian scheme
         nh_GH = int(cfg.CONFIG['integration']['nh_GH'])
         nv_GH = int(cfg.CONFIG['integration']['nv_GH'])
@@ -75,8 +76,8 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
     
         weights = np.outer(weights_hor,weights_ver)
         
-        threshold=np.mean([(weights_hor[0]*weights_hor[int(nh_GH/2)])/(nv_GH*nh_GH), 
-                           (weights_ver[0]*weights_ver[int(nv_GH/2)])/(nv_GH*nh_GH)])
+#        threshold=np.mean([(weights_hor[0]*weights_hor[int(nh_GH/2)])/(nv_GH*nh_GH), 
+#                           (weights_ver[0]*weights_ver[int(nv_GH/2)])/(nv_GH*nh_GH)])
         sum_weights=np.pi
         
         beam_broadening=nh_GH>1 or nv_GH>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)
@@ -94,9 +95,11 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         mu = antenna_params[:,1]
         sigma = antenna_params[:,2]
         
+
         list_pts = []
         weights = []
         sum_weights = 0
+        
         for i in range(nr_GH):
             for j in range(len(sigma)):
                 for k in range(na_GL):
@@ -106,11 +109,8 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
                     weights.append(weight)
                     
                     sum_weights+=weight
-
+                    
                     list_pts.append([r*np.cos(theta)+azimuth,r*np.sin(theta)+elevation])
-
-
-        beam_broadening=nr_GH>1 or na_GL>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)
     
     elif integration_scheme == 3: # Real antenna, for testing only
         
@@ -120,13 +120,23 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         pts_hor = angles
         pts_ver = angles
         
-        threshold = -np.Inf
-        beam_broadening = True
+#        threshold = -np.Inf
+        beam_broadening = True # In this scheme we always consider several beams
         
         weights = data['data']
         sum_weights= np.sum(weights)
     
     
+    # Keep only weights above threshold
+    weights_sort = np.sort(np.array(weights).ravel())[::-1] # Desc. order
+    
+    weights_cumsum = np.cumsum(weights_sort/sum_weights)
+    idx_above = np.where(weights_cumsum>cfg.CONFIG['integration']['weight_threshold'])[0][0]
+
+    threshold = weights_sort[idx_above]
+    sum_weights = np.sum(weights_sort[weights_sort>threshold])
+    
+    # Get beams
     list_beams = []     
     # create vector of bin positions
     rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
@@ -176,22 +186,23 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         radar_pos=cfg.CONFIG['radar']['coords']
         
         for i in range(len(list_pts)):
-            if cfg.CONFIG['radar']['type'] == 'GPM':
-                S,H, E = atm_refraction.get_GPM_refraction(list_pts[i][1])
-            else:
-                S,H, E = atm_refraction.get_radar_refraction(rranges, list_pts[i][1], radar_pos, refraction_method, N)
-       
-            lats,lons,b=get_radar_beam_trilin(list_variables, list_pts[i][0], S,H)
-            # Create dictionary of beams
-            dic_beams={}
-            for k, bi in enumerate(b): # Loop on interpolated variables
-                if k == 0: # Do this only for the first variable (same mask for all variables)
-                    mask_beam=np.zeros((len(bi)))
-                    mask_beam[bi==-9999]=-1 # Means that the interpolated point is above COSMO domain
-                    mask_beam[np.isnan(bi)]=1  # NaN means that the interpolated point is below COSMO terrain
-                bi[mask_beam!=0]=float('nan') # Assign NaN to all missing data
-                dic_beams[keys[k]]=bi # Create dictionary
-            list_beams.append(Beam(dic_beams, mask_beam, lats, lons, S,H,E,list_pts[i][1], weights[i]/sum_weights))       
+            if weights[i] > threshold:
+                if cfg.CONFIG['radar']['type'] == 'GPM':
+                    S,H, E = atm_refraction.get_GPM_refraction(list_pts[i][1])
+                else:
+                    S,H, E = atm_refraction.get_radar_refraction(rranges, list_pts[i][1], radar_pos, refraction_method, N)
+           
+                lats,lons,b=get_radar_beam_trilin(list_variables, list_pts[i][0], S,H)
+                # Create dictionary of beams
+                dic_beams={}
+                for k, bi in enumerate(b): # Loop on interpolated variables
+                    if k == 0: # Do this only for the first variable (same mask for all variables)
+                        mask_beam=np.zeros((len(bi)))
+                        mask_beam[bi==-9999]=-1 # Means that the interpolated point is above COSMO domain
+                        mask_beam[np.isnan(bi)]=1  # NaN means that the interpolated point is below COSMO terrain
+                    bi[mask_beam!=0]=float('nan') # Assign NaN to all missing data
+                    dic_beams[keys[k]]=bi # Create dictionary
+                list_beams.append(Beam(dic_beams, mask_beam, lats, lons, S,H,E,list_pts[i], weights[i]/sum_weights))       
     
     
     return list_beams
@@ -227,17 +238,30 @@ def get_radar_beam_trilin(list_vars, azimuth, distances_profile, heights_profile
     
     # Get COSMO local coordinates info
     proj_COSMO=list_vars[0].attributes['proj_info']
+    
     # Get lower left corner of COSMO domain in local coordinates
     llc_COSMO=(float(proj_COSMO['Lo1']), float(proj_COSMO['La1']))
+    llc_COSMO=np.asarray(llc_COSMO).astype('float32')
+    
+    # Get upper left corner of COSMO domain in local coordinates
+    urc_COSMO=(float(proj_COSMO['Lo2']), float(proj_COSMO['La2']))
+    urc_COSMO=np.asarray(urc_COSMO).astype('float32')
+        
     res_COSMO=list_vars[0].attributes['resolution']
 
     # Get resolution 
-    # Transform radar WGS coordinates into local COSMO coordinates
 
+    # Transform radar gate coordinates into local COSMO coordinates
     coords_rad_loc=pycosmo.WGS_to_COSMO((lats_rad,lons_rad),[proj_COSMO['Latitude_of_southern_pole'],proj_COSMO['Longitude_of_southern_pole']])  
-    llc_COSMO=np.asarray(llc_COSMO).astype('float32')
     
 
+    # Check if all points are within COSMO domain
+    if np.any(coords_rad_loc[:,1]<llc_COSMO[1]) or\
+        np.any(coords_rad_loc[:,0]<llc_COSMO[0]) or \
+            np.any(coords_rad_loc[:,1]>urc_COSMO[1]) or \
+                np.any(coords_rad_loc[:,0]>urc_COSMO[0]):
+                    raise(IndexError('ERROR: RADAR DOMAIN IS NOT ENTIRELY CONTAINED IN COSMO SIMULATION DOMAIN: ABORTING'))
+                    
     # Now we interpolate all variables along beam using C-code file
     ###########################################################################
     for n,var in enumerate(list_vars):           

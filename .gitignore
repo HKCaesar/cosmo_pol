@@ -4,6 +4,7 @@
 *.npy
 tests/
 test_data/
+validation/
 lookup_BK/
 plots/
 papers/

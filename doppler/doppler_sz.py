@@ -214,7 +214,7 @@ def get_v_hydro_weighted(beam, list_hydrom, lut_sz):
         # Get fall speed
         v_f = list_hydrom[h].get_V(list_D)
         vh_w = np.trapz(N*v_f[:,np.newaxis]*rcs,axis=0)
-        n_w = np.trapz(N*v_f[:,np.newaxis], axis=0)
+        n_w = np.trapz(N*rcs, axis=0)
         
 
         vh_avg[valid_data] = utilities.nansum_arr(vh_avg[valid_data],

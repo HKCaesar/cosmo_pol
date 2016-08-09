@@ -72,7 +72,7 @@ def cut_at_sensitivity(list_beams):
     elif len(sens_config) == 2: # ZH - range
         threshold_func = lambda r: (sens_config[0] - 20*np.log10(sens_config[1]/1000.)) \
                                 + 20*np.log10(r/1000.)
-    if len(sens_config) == 1: # ZH
+    elif len(sens_config) == 1: # ZH
         threshold_func = lambda r: sens_config[0]
         
     else:
@@ -85,13 +85,15 @@ def cut_at_sensitivity(list_beams):
     if isinstance(list_beams[0],list): # Loop on list of lists
         for i,sweep in enumerate(list_beams):
             for j,b, in enumerate(sweep):
-                mask = 10*np.log10(b.values['ZH']) < threshold_func(b.dist_profile)
+                rranges = cfg.CONFIG['radar']['radial_resolution'] * np.arange(len(b.dist_profile))
+                mask = 10*np.log10(b.values['ZH']) < threshold_func(rranges)
                 for k in b.values.keys():
                     if k in constants.SIMULATED_VARIABLES:
                         list_beams[i][j].values[k][mask] = np.nan    
     else:
         for i,b in enumerate(list_beams): # Loop on simple list
-            mask = b.values['ZH'] < threshold_func(b.dist_profile)
+            rranges = cfg.CONFIG['radar']['radial_resolution'] * np.arange(len(b.dist_profile))
+            mask = 10*np.log10(b.values['ZH']) < threshold_func(rranges)
             for k in b.values.keys():
                 if k in constants.SIMULATED_VARIABLES:
                     list_beams[i].values[k][mask] = np.nan

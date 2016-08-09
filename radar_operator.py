@@ -184,7 +184,7 @@ class RadarOperator():
         return  pyrad_instance
         
         
-    def get_PPI(self, elevations, az_step=-1, az_start=0, az_stop=359):
+    def get_PPI(self, elevations, azimuths = [], az_step=-1, az_start=0, az_stop=359):
         
         # Check if model file has been loaded
         if self.dic_vars=={}:
@@ -206,11 +206,13 @@ class RadarOperator():
         if az_step==-1:
             az_step=cfg.CONFIG['radar']['3dB_beamwidth']
             
-        # Define azimuths and ranges
-        if az_start>az_stop:
-            azimuths=np.hstack((np.arange(az_start,360.,az_step),np.arange(0,az_stop+az_step,az_step)))
-        else:
-            azimuths=np.arange(az_start,az_stop+az_step,az_step)
+        # Define list of angles that need to be resolved
+        if not len(azimuths):        
+            # Define azimuths and ranges
+            if az_start>az_stop:
+                azimuths=np.hstack((np.arange(az_start,360.,az_step),np.arange(0,az_stop+az_step,az_step)))
+            else:
+                azimuths=np.arange(az_start,az_stop+az_step,az_step)
             
         # Define  ranges
         rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
@@ -223,7 +225,7 @@ class RadarOperator():
         list_sweeps=[]
         
         def worker(elev, azimuth):#
-            print azimuth
+            print(azimuth)
             list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
             doppler_beam = doppler_sz.get_doppler_velocity(list_GH_pts,lut_sz)
             pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
@@ -257,7 +259,7 @@ class RadarOperator():
         
         return pyrad_instance
         
-    def get_RHI(self, azimuths, elev_step=-1, elev_start=0, elev_stop=90):
+    def get_RHI(self, azimuths, elevations = [], elev_step=-1, elev_start=0, elev_stop=90):
         # Check if model file has been loaded
         if self.dic_vars=={}:
             print('No model file has been loaded! Aborting...')
@@ -267,7 +269,7 @@ class RadarOperator():
         if np.isscalar(azimuths):
             azimuths=[azimuths]
             
-        if cfg.CONFIG['radar_type'] != 'ground':
+        if cfg.CONFIG['radar']['type'] != 'ground':
             print 'RHI profiles only possible for ground radars, please use'
             print ' get_GPM_swath instead'
             return []
@@ -276,11 +278,11 @@ class RadarOperator():
         dic_vars, N, lut_sz, diag_mode=self.define_globals()
         
         # Define list of angles that need to be resolved
-        if elev_step==-1:
-            elev_step=cfg.CONFIG['radar']['3dB_beamwidth']
-        
-        # Define elevation and ranges
-        elevations=np.arange(elev_start,elev_stop+elev_step,elev_step)
+        if not len(elevations):
+            if elev_step==-1:
+                elev_step=cfg.CONFIG['radar']['3dB_beamwidth']
+            # Define elevation and ranges
+            elevations=np.arange(elev_start,elev_stop+elev_step,elev_step)
         
         # Define  ranges
         rranges=np.arange(cfg.CONFIG['radar']['radial_resolution']/2,
@@ -293,6 +295,7 @@ class RadarOperator():
         list_sweeps=[]
 
         def worker(azimuth, elev):
+            print(elev)
             list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
             doppler_beam = doppler_sz.get_doppler_velocity(list_GH_pts,lut_sz)
             pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
@@ -304,7 +307,7 @@ class RadarOperator():
                 
         for a in azimuths: # Loop on the o
             func=partial(worker,a) # Partial function
-            list_beams = pool.map(func,elevations)
+            list_beams = map(func,elevations)
             list_sweeps.append(list_beams)
             
         pool.clear()
@@ -383,8 +386,7 @@ class RadarOperator():
         
         # Threshold at given sensitivity
         list_beams = utilities.cut_at_sensitivity(list_beams)
-        import pickle
-        pickle.dump(list_beams,open('./test_gpm','wb'))
+
         list_beams_formatted = GPM_simulator.SimulatedGPM(list_beams, dim_swath, band)
         return list_beams_formatted
    
@@ -393,28 +395,28 @@ class RadarOperator():
 if __name__=='__main__':
 
     
-    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
-    cosmo_file = '/ltedata/COSMO/GPM_1MOM/2014-08-13-02-28.grb'
+#    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
+#    cosmo_file = '/ltedata/COSMO/GPM_1MOM/2014-08-13-02-28.grb'
     #
     #
-    a  = RadarOperator()
-    a.load_model_file(cosmo_file)
-    swath = a.get_GPM_swath(gpm_file,'Ka')
+#    a  = RadarOperator()
+#    a.load_model_file(cosmo_file)
+#    swath = a.get_GPM_swath(gpm_file,'Ka')
 
-    from cosmo_pol.gpm.GPM_simulator import compare_operator_with_GPM
-    a,b,c = compare_operator_with_GPM(swath,gpm_file)
+#    from cosmo_pol.gpm.GPM_simulator import compare_operator_with_GPM
+#    a,b,c = compare_operator_with_GPM(swath,gpm_file)
 
 
-#    from cosmo_pol.radar import small_radar_db, pyart_wrapper
-##    import glob
-#    
-#    files_c = pycosmo.get_model_filenames('/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM')
-#    a=RadarOperator(options_file='./option_files/MXPOL_PPI.yml', diagnostic_mode=True) 
+    from cosmo_pol.radar import small_radar_db, pyart_wrapper
+#    import glob
+    
+    files_c = pycosmo.get_model_filenames('/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/')
+#    a=RadarOperator(options_file='/storage/cosmo_pol/option_files/MXPOL_RHI_PAYERNE.yml', diagnostic_mode=True) 
 #    a.load_model_file(files_c['h'][10],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
-#    r=a.get_PPI(1)
+    r=a.get_RHI(azimuths = 330)
 #     
-#    display = RadarDisplay(r, shift=(0.0, 0.0))
-#    display.plot('ZDR', 0, 150000,colorbar_flag=True,title="ZH (radar)",mask_outside = True)
+    display = RadarDisplay(r, shift=(0.0, 0.0))
+    display.plot('RVEL', 0, 30000,colorbar_flag=True,title="ZH (radar)",mask_outside = True)
 #    
 #    time = pycosmo.get_time_from_COSMO_filename(files_c['h'][10])
 #    

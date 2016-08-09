@@ -30,7 +30,7 @@ dbName='ltedb'
 folders_mxpol=['/ltedata/HYMEX/SOP_2012/Radar/Proc_data/2012/','/ltedata/HYMEX/SOP_2013/Radar/Proc_data/2013/',\
 '/ltedata/Davos_2014/Radar/Proc_data/','/ltedata/Davos_2009-2010/MXPOL/Proc_data/','/ltedata/Payerne_2014/Radar/Proc_data/2014/',\
 '/ltedata/CLACE2014/Radar/Proc_data/2014/']
-campaigns=['Hymex_2012','Hymex_2013','Davos_2014','Davos_2009-2010','Payerne_2014','Clace_2014']
+CAMPAIGNS=['Hymex_2012','Hymex_2013','Davos_2014','Davos_2009-2010','Payerne_2014','Clace_2014']
 
 
 folders_CH=['/ltedata/MeteoSwiss_Full_Radar_Data_hail/','/ltedata/MeteoSwiss_Full_Radar_Data/',
@@ -104,8 +104,7 @@ class CH_RADAR_db():
                     indexes_best = idx[np.where(delta==np.min(delta))[0]]
                     
                     x = [x[i]  for i in indexes_best]
-                    
-                    print(np.where(delta==np.min(delta)))
+
                 else:
                     x=[]
         except:
@@ -173,7 +172,7 @@ class MXPOL_db():
             # the closest match will be found, if len(date) == 2, all scans with timestamp
             # between date[0] and date[1] will be kept
             # scan_type = string specifying the type of scan ("PPI","RHI", "PPI_SPEC" or "RHI_SPEC"))
-            # campaign = one of the MXPOL radar campaigns (see top of file)
+            # campaign = one of the MXPOL radar CAMPAIGNS (see top of file)
             # angle = list of 1 or 2 integers, specifying the angle of the scan 
             # (azimuth if RHI, elevation if PPI), if len(angle) == 1, the closest match will be found
             # if len(angle) == 2, all scans with angle inbetween angle[0] and angle[1] will be kept
@@ -198,7 +197,7 @@ class MXPOL_db():
         self.cur.execute("SELECT VERSION()")
         self.cur.execute(sql_query)
         x=self.cur.fetchall()
-        print(sql_query)
+
         try:
             if len(angle)==1:
                 delta=np.array([abs(q[4]-angle[0]) for q in x])
@@ -222,7 +221,9 @@ class MXPOL_db():
 
 
                 if len(delta)>0:
-                    x=x[idx[np.argmin(delta)]]  
+                    indexes_best = idx[np.where(delta==np.min(delta))[0]]
+                    x = [x[i]  for i in indexes_best]
+
                 else:
                     x=[]
         except:
@@ -260,7 +261,7 @@ class MXPOL_db():
                         
                     sql = "INSERT INTO %s(FILEPATH,CAMPAIGN,DATE,SCAN_TYPE,ANGLE) \
                        SELECT '%s', '%s', '%s', '%s','%f' WHERE NOT EXISTS (SELECT FILEPATH FROM %s WHERE FILEPATH = '%s')" % \
-                    (tableName_MXPOL, pathFile, campaigns[i], currentTimeString, scan_type, angle,
+                    (tableName_MXPOL, pathFile, CAMPAIGNS[i], currentTimeString, scan_type, angle,
                      tableName_MXPOL,pathFile)
                     
                     self.cur.execute(sql)

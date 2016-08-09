@@ -1,0 +1,23 @@
+radar:
+    coords: [46.81348, 6.94306,500]
+    type: ground
+    frequency: 9.41
+    range: 30000
+    radial_resolution: 75
+    PRI: 700
+    FFT_length: 128
+    sensitivity: [-5,10000]
+    3dB_beamwidth: 1.45
+integration:
+    scheme: 1
+    3dB_beamwidth: 1.45
+    na_GH: 7
+    nr_GH: 7
+    weight_threshold: 0.999
+    antenna_diagram: /media/wolfensb/Storage/cosmo_pol/tests/antenna.csv
+refraction:
+    scheme: 1
+attenuation:
+    correction: 1
+doppler:
+    scheme: 2

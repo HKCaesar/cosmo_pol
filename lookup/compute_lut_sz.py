@@ -21,8 +21,8 @@ from cosmo_pol.lookup.lut import Lookup_table
 FOLDER_LUT=os.path.dirname(os.path.realpath(__file__))+'/stored_lut/'
 FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut/'
 
-GENERATE_1MOM=False
-GENERATE_2MOM=True
+GENERATE_1MOM=True
+GENERATE_2MOM=False
 
 FORCE_REGENERATION_SCATTER_TABLES=True
 
@@ -31,7 +31,7 @@ TEMPERATURES_LIQ = range(262,316,2)
 TEMPERATURES_SOL = range(200,278,2)
 
 FREQUENCIES=[2.7,4.15,5.6,7.7,9.8,11.7,13.6,24.6,35.6]    
-FREQUENCIES = [13.6,24.6,35.6]    
+FREQUENCIES = [9.41]    
 NUM_DIAMETERS=1024
 
 HYDROM_TYPES=['R','S','G','H'] # Rain, snow, graupel and hail
@@ -146,25 +146,25 @@ def prepare_global_lookup_tables(scheme,freq):
     
 if __name__=='__main__':
     # Generate scattering tables (if needed)    
-#    for f in FREQUENCIES:
-#        for hydrom_type in HYDROM_TYPES:
-#            if GENERATE_1MOM:
-#                if FORCE_REGENERATION_SCATTER_TABLES or not os.path.exists(FOLDER_LUT+'lut_SZ_'+hydrom_type+'_'+str(f).replace('.','_')+"_1mom.pz"):
-#                    if hydrom_type!='H':
-#                        print('Generating scatter table for 1 moment scheme, hydrometeor='+hydrom_type+' and freq='+str(f))
-#                        if hydrom_type in ['S','G']:
-#                            temp = TEMPERATURES_SOL
-#                        else:
-#                            temp = TEMPERATURES_LIQ
-#                        sz_lut('1mom',hydrom_type,f,ELEVATIONS,temp)
-#            if GENERATE_2MOM:
-#                if FORCE_REGENERATION_SCATTER_TABLES or not os.path.exists(FOLDER_LUT+'lut_SZ_'+hydrom_type+'_'+str(f).replace('.','_')+"_2mom.pz"):
-#                    print('Generating scatter table for 2 moment scheme, hydrometeor='+hydrom_type+' and freq='+str(f))
-#                    if hydrom_type in ['S','G','H']:
-#                        temp = TEMPERATURES_SOL
-#                    else:
-#                        temp = TEMPERATURES_LIQ
-#                    sz_lut('2mom',hydrom_type,f,ELEVATIONS,temp)
+    for f in FREQUENCIES:
+        for hydrom_type in HYDROM_TYPES:
+            if GENERATE_1MOM:
+                if FORCE_REGENERATION_SCATTER_TABLES or not os.path.exists(FOLDER_LUT+'lut_SZ_'+hydrom_type+'_'+str(f).replace('.','_')+"_1mom.pz"):
+                    if hydrom_type!='H':
+                        print('Generating scatter table for 1 moment scheme, hydrometeor='+hydrom_type+' and freq='+str(f))
+                        if hydrom_type in ['S','G']:
+                            temp = TEMPERATURES_SOL
+                        else:
+                            temp = TEMPERATURES_LIQ
+                        sz_lut('1mom',hydrom_type,f,ELEVATIONS,temp)
+            if GENERATE_2MOM:
+                if FORCE_REGENERATION_SCATTER_TABLES or not os.path.exists(FOLDER_LUT+'lut_SZ_'+hydrom_type+'_'+str(f).replace('.','_')+"_2mom.pz"):
+                    print('Generating scatter table for 2 moment scheme, hydrometeor='+hydrom_type+' and freq='+str(f))
+                    if hydrom_type in ['S','G','H']:
+                        temp = TEMPERATURES_SOL
+                    else:
+                        temp = TEMPERATURES_LIQ
+                    sz_lut('2mom',hydrom_type,f,ELEVATIONS,temp)
                 
     # Create global lookup-tables
     for f in FREQUENCIES:

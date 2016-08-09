@@ -49,7 +49,7 @@ for i,f in enumerate(files_c['h'][0:]):
         KDP_rad = ma.filled(rad.get_field(0,'KDP'),np.nan)
         ZH_rad = ma.filled(rad.get_field(0,'Z'),np.nan)
         ZDR_rad = ma.filled(rad.get_field(0,'ZDR'),np.nan)
-        RHOHV_rad = ma.filled(rad.get_field(0,'ZDR'),np.nan)
+        RHOHV_rad = ma.filled(rad.get_field(0,'RHO'),np.nan)
                         
         np.save(FOLDER_RADAR+'ZH_'+str(i)+'.npy',ZH_rad)
         np.save(FOLDER_RADAR+'ZDR_'+str(i)+'.npy',ZDR_rad)
