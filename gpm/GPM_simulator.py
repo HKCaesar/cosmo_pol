@@ -9,6 +9,7 @@ Created on Tue Nov  3 11:24:58 2015
 import h5py
 import pyproj as pp
 import numpy as np
+import copy
 from cosmo_pol.constants import constants
 import matplotlib.pyplot as plt
 #from interpolation import get_profiles_GH
@@ -37,18 +38,20 @@ class SimulatedGPM():
         
         pol_vars=list_beams[0].values.keys() # List of simulated variables
         
+        list_beams_cp = copy.deepcopy(list_beams) # make a deepcopy to avoid overwriting the original one
+        
         bin_surface=np.zeros((N,M))
-        for idx in range(len(list_beams)): # Here we remove all points that are below the topography COSMO
+        for idx in range(len(list_beams_cp)): # Here we remove all points that are below the topography COSMO
             i = int(np.floor(idx/M))
             j = idx-i*M
             try:
-                bin_surface[i,j] = len(list_beams[idx].mask)-np.where(list_beams[idx].mask>=1)[0][0]
+                bin_surface[i,j] = len(list_beams_cp[idx].mask)-np.where(list_beams_cp[idx].mask>=1)[0][0]
             except:
                 bin_surface[i,j]=0
             for k in pol_vars:
-                list_beams[idx].values[k]=list_beams[idx].values[k][list_beams[idx].mask<1] # Remove points that are below topo
-            list_beams[idx].lats_profile=list_beams[idx].lats_profile[list_beams[idx].mask<1]
-            list_beams[idx].lons_profile=list_beams[idx].lons_profile[list_beams[idx].mask<1]                
+                list_beams_cp[idx].values[k]=list_beams_cp[idx].values[k][list_beams_cp[idx].mask<1] # Remove points that are below topo
+            list_beams_cp[idx].lats_profile=list_beams_cp[idx].lats_profile[list_beams_cp[idx].mask<1]
+            list_beams_cp[idx].lons_profile=list_beams_cp[idx].lons_profile[list_beams_cp[idx].mask<1]                
 
         # Length of longest beam
         max_len=np.max([len(b.dist_profile) for b in list_beams])
@@ -59,24 +62,23 @@ class SimulatedGPM():
             list_beams_formatted[k]=np.zeros((N,M,max_len))
         # Initialize lats and lons 3D array
 
-        
-        lats=np.zeros((N,M,max_len))*float('nan')
-        lons=np.zeros((N,M,max_len))*float('nan')
+        lats = np.zeros((N,M,max_len))*float('nan')
+        lons = np.zeros((N,M,max_len))*float('nan')
         
         # Fill the output dictionary starting from the ground
-        for idx in range(len(list_beams)):
+        for idx in range(len(list_beams_cp)):
             i = int(np.floor(idx/M))
             j = idx-i*M
-            len_beam=len(list_beams[idx].values[k])
+            len_beam=len(list_beams_cp[idx].values[k])
             # Flip because we want to start from the ground
-            l=list_beams[idx].lats_profile
-            ll=list_beams[idx].lons_profile
+            l=list_beams_cp[idx].lats_profile
+            ll=list_beams_cp[idx].lons_profile
             
             lats[i,j,0:len_beam]=l[::-1]
             lons[i,j,0:len_beam]=ll[::-1]
             # Flip [::-1] because we want to start from the ground
             for k in pol_vars:
-                list_beams_formatted[k][i,j,0:len_beam] = list_beams[idx].values[k][::-1]
+                list_beams_formatted[k][i,j,0:len_beam] = list_beams_cp[idx].values[k][::-1]
                 
         self.bin_surface = bin_surface
         self.band = band
@@ -108,14 +110,15 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     lon_simul = simulated_GPM_swath.lons
         
     # First bin without clutter
-    binNoClutter=gpm_f[group]['PRE']['binClutterFreeBottom'][:]
+    binNoClutter = gpm_f[group]['PRE']['binClutterFreeBottom'][:]
+    
     # Get # of GPM bins
     GPM_N_bins =  \
             constants.GPM_NO_BINS_KA if band == 'Ka' \
                 else constants.GPM_NO_BINS_KU
                 
     diff = (GPM_N_bins - binNoClutter) - simulated_GPM_swath.bin_surface
-            
+    
     diff[diff<0]=0
     diff=diff.astype(int)
 
@@ -124,22 +127,24 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     
     # AT GROUND
     ##########################################################################
-    # ZH measured at ground
+    # ZH simulated at ground   
+    ZH_s_dBZ=10*np.log10(simulated_GPM_swath.data['ZH']) 
+    [N,M,K]=ZH_s_dBZ.shape
+    k,j = np.meshgrid(np.arange(M),np.arange(N)) # Create 2D index
+    ZH_s_grd=ZH_s_dBZ[j,k,diff]
 
+    # ZH measured at ground   
     ZH_gpm=gpm_f[group]['PRE']['zFactorMeasured'][:]
     ZH_gpm[ZH_gpm<-1000]=float('nan') # Put Nan where data is missing
 
-    ZH_s_dBZ=10*np.log10(simulated_GPM_swath.data['ZH'])
-    
-    # ZH simulated at ground    
-    [N,M,K]=ZH_s_dBZ.shape
-    
-    k,j = np.meshgrid(np.arange(M),np.arange(N)) # Create 2D index
-    
     ZH_m_grd=ZH_gpm[j,k,binNoClutter]
     ZH_m_grd[ZH_m_grd<-1000]=float('nan')
-    ZH_s_grd=ZH_s_dBZ[j,k,diff]
-    
+    # GPM seems to measure lots of noise, so we apply a mask which corresponds to
+    # all pixels where GPM detected some signal with its correction algorithm
+    mask = gpm_f[group]['SLV']['zFactorCorrectedNearSurface'][:]
+    mask = mask < -1000
+    ZH_m_grd[mask] = np.nan
+
     ZH_ground={}
     ZH_ground['measured']=ZH_m_grd
     ZH_ground['simulated']=ZH_s_grd
@@ -156,11 +161,7 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     lon_everywhere=np.zeros((N,M,K))   
     
     ZH_s_everywhere=ZH_s_dBZ 
-    
-    ZH_gpm = gpm_f[group]['SLV']['zFactorCorrected'][:]
-    ZH_gpm[ZH_gpm<-1000] = float('nan') # Put Nan where data is missing
-    
-    
+        
     for i in range(K):
         ZH_s_everywhere[j,k,i]=ZH_s_dBZ[j,k,diff+i]
         lat_everywhere[j,k,i]=lat_simul[j,k,diff+i]
@@ -291,13 +292,13 @@ def test_accuracy(GPM_file,band):
     return
     
 if __name__=='__main__':
-    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
+#    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
 #    az,elev,rang,coords_GPM = get_GPM_angles(gpm_file,'Ku')
 #    S,H,E = get_GPM_refraction(90,47,)
     
     import pickle
-    u=pickle.load(open('/media/wolfensb/Storage/cosmo_pol/test_gpm','rb'))
-    
+    u=pickle.load(open('/media/wolfensb/Storage/cosmo_pol/mom1.pz','rb'))
+    cl = SimulatedGPM(a,[81,49],'Ku')
 #    a = SimulatedGPM(u,az.shape,'Ku')
 #    uu = compare_operator_with_GPM(a,gpm_file)
 #    g,a=SimulatedGPM_Swath(u['r'],u['s'],u['b'])

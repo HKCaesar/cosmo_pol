@@ -69,7 +69,7 @@ def optimize_gaussians(x,y,n_lobes):
 if __name__ == '__main__':
     data = np.genfromtxt('/media/wolfensb/Storage/cosmo_pol/tests/antenna.csv',delimiter=',')
     x = data[:,0]
-    y = data[:,1]
+    y = 10*np.log10((10**(0.1*data[:,1]))**2)
 
     p1 = optimize_gaussians(x,y,5)
     p2 = optimize_gaussians(x,y,7)
@@ -79,11 +79,11 @@ if __name__ == '__main__':
     plt.hold(True)
     plt.plot(x,gaussian_sum(x,p1),linewidth=2)
     plt.plot(x,gaussian_sum(x,p2),linewidth=2)
-    sigma=1.45/(2*np.sqrt(2*np.log(2)))
+    sigma=1./np.sqrt(2)*1.45/(2*np.sqrt(2*np.log(2)))
     plt.plot(x,gaussian_sum(x,[[0,0,sigma]]),linewidth=2)
     plt.grid()
     plt.legend(['Real antenna','5 gaussians', '7 gaussians','3dB gaussian'],loc=0)
-    plt.ylim(-50,0)
+    plt.ylim(-100,0)
     plt.savefig('ex_fit_0deg.pdf',dpi=200,bbox_inches='tight')
     
     

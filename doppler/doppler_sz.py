@@ -9,6 +9,7 @@ TODO : CORRECTION FOR AIR DENSITY RHO !!!
 
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter
+import copy
 
 import doppler_c
 from cosmo_pol.hydrometeors import hydrometeors
@@ -165,13 +166,15 @@ def get_v_hydro_weighted(beam, list_hydrom, lut_sz):
         
         valid_data = beam.values['Q'+h+'_v'] > 0
         
-        elev=beam.elev_profile
+        # Get all elevations
+        elev = beam.elev_profile
         # Since lookup tables are defined for angles >0, we have to check
         # if angles are larger than 90°, in that case we take 180-elevation
         # by symmetricity
-        elev[elev>90]=180-elev[elev>90]
+        elev_lut = copy.deepcopy(elev)
+        elev_lut[elev_lut>90]=180-elev_lut[elev_lut>90]
         # Also check if angles are smaller than 0, in that case, flip sign
-        elev[elev<0]=-elev[elev<0]            
+        elev_lut[elev_lut<0]=-elev_lut[elev_lut<0]         
 
         T=beam.values['T']     
 
@@ -183,7 +186,7 @@ def get_v_hydro_weighted(beam, list_hydrom, lut_sz):
         Part 1: Query of the SZ Lookup table  and RCS computation
         '''
         # Get SZ matrix
-        sz = lut_sz[h].lookup_line(e = elev[valid_data],
+        sz = lut_sz[h].lookup_line(e = elev_lut[valid_data],
                                    t = T[valid_data])
         # get RCS
         rcs = 2*np.pi*(sz[:,:,0] - sz[:,:,1] - sz[:,:,2] + sz[:,:,3])
@@ -245,13 +248,14 @@ def get_doppler_spectrum(beam, list_hydrom, lut_sz):
     step_D = D[1,:]-D[0,:] # The diameter step for every hydrometeor class
     
     # Get all elevations
-    elev=beam.elev_profile
+    elev = beam.elev_profile
     # Since lookup tables are defined for angles >0, we have to check
     # if angles are larger than 90°, in that case we take 180-elevation
     # by symmetricity
-    elev[elev>90]=180-elev[elev>90]
+    elev_lut = copy.deepcopy(elev)
+    elev_lut[elev_lut>90]=180-elev_lut[elev_lut>90]
     # Also check if angles are smaller than 0, in that case, flip sign
-    elev[elev<0]=-elev[elev<0]       
+    elev_lut[elev_lut<0]=-elev_lut[elev_lut<0]       
     
     # Get azimuth angle
     phi = beam.GH_pt[0] 
@@ -282,10 +286,11 @@ def get_doppler_spectrum(beam, list_hydrom, lut_sz):
             
             # Compute RCS for all hydrometeors
             for j,h in enumerate(hydrom_types):
-                sz = lut_sz[h].lookup_line(e = elev[i],t = beam.values['T'][i])                         
+                sz = lut_sz[h].lookup_line(e = elev_lut[i],t = beam.values['T'][i])                         
                 # get RCS
                 rcs[:,j]= (2*np.pi*(sz[:,0] - sz[:,1] - sz[:,2] + sz[:,3])).T
-    
+            # Import we use symetrical elevations only for lookup querying, not
+            # for actual trigonometrical velocity estimation
             Da, Db, idx = get_diameter_from_rad_vel(list_hydrom,phi,
                           elev[i],beam.values['U'][i],
                           beam.values['V'][i],beam.values['W'][i],rho_corr[i]) 

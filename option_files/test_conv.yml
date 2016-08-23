@@ -9,9 +9,9 @@ radar:
     sensitivity: -60
     3dB_beamwidth: 1.45
 integration:
-    scheme: 2
+    scheme: 3
     3dB_beamwidth: 1.45
-    nh_GH: 3
+    nh_GH: 5
     nv_GH: 9
     antenna_diagram: /media/wolfensb/Storage/cosmo_pol/tests/antenna.csv
 refraction:

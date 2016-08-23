@@ -5,6 +5,7 @@ Created on Thu Feb  4 13:46:57 2016
 @author: wolfensb
 """
 import scipy.special as spe
+import constants_1mom as c1
 
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 # PSD Parameters
@@ -23,6 +24,7 @@ X_MAX_G = 5E-04
 
 B_G = 1./B_G_ # from x= a * D**b
 A_G = A_G_**(-1/B_G_) # from x= a * D**b
+B_G = c1.B_G# Ŧo remove!
 BETA_G=BETA_G_/B_G_
 ALPHA_G=ALPHA_G_*A_G_**(-BETA_G_/B_G_)
 NU_G=NU_G_/B_G_
@@ -34,6 +36,7 @@ LAMBDA_FACTOR_G=1./A_G*spe.gamma((MU_G+1)/NU_G)/spe.gamma((MU_G+B_G+1)/NU_G)
 
 # Get correct units
 A_G=A_G*1000**(-B_G)
+A_G =  c1.A_G # Ŧo remove!
 ALPHA_G=ALPHA_G*1000**(-BETA_G)
 
 # Compute constant integration factors (saves time since evaluation 

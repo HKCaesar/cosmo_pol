@@ -6,7 +6,12 @@ Created on Tue Aug  4 12:45:21 2015
 """
 
 from cosmo_pol.utilities import cfg
+
 import numpy as np
+
+'''
+General constants are defined here
+'''
 
 ##############################################################################
 # Parameters
@@ -36,6 +41,32 @@ class Constant_class(object):
         self.KW = 0.93 # Dielectric factor for water at weather radar frequencies
         self.RHO_0 = 1.225 # Air density at ground
         
+        #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+        # Power laws based on MASC observations
+        # Axis-ratios:
+        # Aggregates
+        self.A_AR_ALPHA_AGG =  8.42003348664
+        self.B_AR_ALPHA_AGG =  -0.568465084269 
+        self.A_AR_LOC_AGG = 1
+        self.B_AR_LOC_AGG = 0.
+        self.A_AR_SCALE_AGG =  0.0527252217284
+        self.B_AR_SCALE_AGG = 0.792594862923    
+        
+        # Graupel
+        self.A_AR_ALPHA_GRAU =  1.97869286543
+        self.B_AR_ALPHA_GRAU =  -0.426770312328
+        self.A_AR_LOC_GRAU = 1.
+        self.B_AR_LOC_GRAU = 0.
+        self.A_AR_SCALE_GRAU =  0.0743715480794
+        self.B_AR_SCALE_GRAU =  0.672627814141 
+    
+        # Canting angles std
+        self.A_CANT_STD_AGG = 30.2393875
+        self.B_CANT_STD_AGG = -0.077397563
+        self.A_CANT_STD_GRAU = 26.65795932
+        self.B_CANT_STD_GRAU = -0.10082787
+        
+    
         if cfg.CONFIG != {}:
             #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
             # Radar parameters
@@ -60,8 +91,8 @@ class Constant_class(object):
             self.GPM_SENSITIVITY = 12 # Toyoshima et al, 2015
             self.GPM_RADIAL_RES_KA = 250
             self.GPM_RADIAL_RES_KU = 125
-            self.GPM_NO_BINS_KA = 88
-            self.GPM_NO_BINS_KU = 176
+            self.GPM_NO_BINS_KA = 88 + 1
+            self.GPM_NO_BINS_KU = 176 + 1
             
     def update(self):
         self.__init__()

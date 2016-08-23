@@ -54,7 +54,7 @@ def get_radar_observables(list_beams, lut_sz):
             # For GPM some sub-beams are longer than the main beam, so we discard
             # the "excess" part
             for k in beam.values.keys():
-                beam.values[k] = beam.values[k][0:len_beams-1]
+                beam.values[k] = beam.values[k][0:len_beams]
                 
             valid_data = beam.values['Q'+h+'_v'] > 0
             
@@ -92,7 +92,7 @@ def get_radar_observables(list_beams, lut_sz):
                 hydrom.set_psd(QN[valid_data],QM[valid_data])
          
             # Compute particle numbers for all diameters
-            N=hydrom.get_N(list_D)
+            N = hydrom.get_N(list_D)
 
             if len(N.shape) == 1:
                 N = np.reshape(N,[len(N),1]) # To be consistent with the einsum dimensions
@@ -105,7 +105,7 @@ def get_radar_observables(list_beams, lut_sz):
             
             sz_integ[valid_data,j,:] = nansum_arr(sz_integ[valid_data,j,:],
                                             sz_psd_integ*beam.GH_weight)
-                                            
+    
     # Finally we integrate for all hydrometeors
     sz_integ = np.nansum(sz_integ,axis=1)
     sz_integ[sz_integ == 0] = np.nan
@@ -138,15 +138,17 @@ def get_radar_observables(list_beams, lut_sz):
     rad_obs['AH'] = AH
     rad_obs['AV'] = AV    
     
+
+
     # This mask serves to tell if the measured point is ok, or below topo or above COSMO domain
-    mask = np.zeros(len_beams-1,)
+    mask = np.zeros(len_beams,)
     for i,beam in enumerate(list_beams):
-        mask = sum_arr(mask,beam.mask[0:len_beams-1]) # Get mask of every Beam
-        
-    # Larger than 1 means that every Beam is below TOPO, smaller than 0 that at least one Beam is above COSMO domain    
+        mask = sum_arr(mask,beam.mask[0:len_beams],cst = 1) # Get mask of every Beam
+
+
+    # Larger than 0 means that at least one Beam is below TOPO, smaller than 0 that at least one Beam is above COSMO domain    
     mask/=num_beams 
-    mask[np.logical_and(mask>=0,mask<1)]=0
-    
+    mask[np.logical_and(mask>=0,mask<1)] = 0 # If at least one beam is above topo, we still consider this gate
     
     # Finally get vectors of distances, height and lat/lon at the central beam
     heights_radar = list_beams[idx_0].heights_profile

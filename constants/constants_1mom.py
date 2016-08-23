@@ -13,9 +13,9 @@ import numpy as np
 
 # Graupel PSD
 N0_G=4*1E3 # mm-1 m-3
-A_G=169.6/(1000**3.1) # m_g = am_g * D**3.1 (with m_g in kg and D in m)
 B_G=3.1
-ALPHA_G=442.0/(1000**0.89) # mm^0.89*s-1
+A_G=169.6*(1000**-B_G) # m_g = am_g * D**3.1 (with m_g in kg and D in m)
+ALPHA_G=442.0*(1000**-0.89) # mm^0.89*s-1
 BETA_G=0.89
 MU_G=0.0
 D_MIN_G=0.2
@@ -30,9 +30,10 @@ NTOT_FACTOR_G=spe.gamma(MU_G+1)
 # Ice crystals PSD
 N0_I=1.0E2 # mm-1 m-3
 
+
 # Snow PSD
-A_S=0.038/(1000**2)  # kg * mm^-2 
 B_S=2 # power
+A_S=0.038/(1000**B_S)  # kg * mm^-2 
 ALPHA_S=4.9/np.sqrt(1000) # mm^0.5*s-1
 BETA_S=0.5
 MU_S=0.0

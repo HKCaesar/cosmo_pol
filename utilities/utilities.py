@@ -8,6 +8,10 @@ Created on Wed Sep  9 16:53:48 2015
 import numpy as np
 #import scipy.spatial.qhull as qhull
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
+from scipy.ndimage import map_coordinates
+
+
 from cosmo_pol.constants import constants
 from cosmo_pol.utilities import cfg
 
@@ -19,7 +23,7 @@ def nan_cumsum(x):
     x[np.isnan(x)]=0
     return np.cumsum(x)
 
-def sum_arr(x,y):
+def sum_arr(x,y, cst = 0):
     diff = np.array(x.shape) - np.array(y.shape)
     pad_1 = []
     pad_2 = []
@@ -30,15 +34,16 @@ def sum_arr(x,y):
         else:
             pad_2.append((0,d))          
             pad_1.append((0,0))
+            
         
-    x = np.pad(x,pad_1,'constant')
-    y = np.pad(y,pad_2,'constant')
+    x = np.pad(x,pad_1,'constant',constant_values=cst)
+    y = np.pad(y,pad_2,'constant',constant_values=cst)
     
     z = np.sum([x,y],axis=0)
     
     return z
     
-def nansum_arr(x,y):
+def nansum_arr(x,y, cst = 0):
 
     x = np.array(x)
     y = np.array(y)
@@ -54,8 +59,8 @@ def nansum_arr(x,y):
             pad_2.append((0,d))          
             pad_1.append((0,0))
         
-    x = np.pad(x,pad_1,'constant')
-    y = np.pad(y,pad_2,'constant')
+    x = np.pad(x,pad_1,'constant',constant_values=cst)
+    y = np.pad(y,pad_2,'constant',constant_values=cst)
     
     z = np.nansum([x,y],axis=0)
     return z    
@@ -127,7 +132,7 @@ def nice_histogram(dataset):
     for i in range(n_datasets):
         col=colors[i]
         data=dataset[i]
-        n_bins=min([100,np.round(len(data)/30)])
+        n_bins=min([50,np.round(len(data)/30)])
         x=plt.hist(data,n_bins,histtype='stepfilled',alpha=0.5,color=col,normed=True)
         plt.hist(data,n_bins,histtype='step',linewidth=2,color=col,normed=True, label='_nolegend_')
         xlims=[np.min([np.min(x[1]*0.9),xlims[0]]),np.max([np.max(x[1]*1.1),xlims[1]])]
@@ -136,10 +141,63 @@ def nice_histogram(dataset):
     plt.ylim(ylims)
     return
 
-#a = np.ones((147,12))
-#b = np.ones((147,12))
+def polar2cartesian(r, t, grid, x, y, order=3):
+
+    X, Y = np.meshgrid(x, y)
+
+    new_r = np.sqrt(X*X+Y*Y)
+    new_t = np.arctan2(X, Y)+np.pi
+
+    ir = interp1d(r, np.arange(len(r)), bounds_error=False)
+    it = interp1d(t, np.arange(len(t)))
+
+    new_ir = ir(new_r.ravel())
+    new_it = it(new_t.ravel())
+
+    new_ir[new_r.ravel() > r.max()] = len(r)-1
+    new_ir[new_r.ravel() < r.min()] = 0
+
+    return map_coordinates(grid, np.array([new_it, new_ir]),
+                            order=order).reshape(new_r.shape)
+                            
+def vector_1d_to_polar(angles, values, x,y):
+    midpt = int(np.floor(len(angles)/2))
+    r = angles[midpt:]
+    thet = [0,np.pi,2*np.pi]
+    
+    pol=np.zeros((len(thet),len(r)))
+    pol[0,:]=values[midpt:]
+    pol[1,:]=values[0:midpt+1]
+    pol[1,:]=pol[1,::-1]
+    pol[2,:]=pol[0,:]
+    
+    return  polar2cartesian(r,thet,pol,x,y)
+    
+if __name__ == '__main__':
+#    angles = np.arange(-15,16,1)
+#    vals = np.exp(-0.001*angles**2)
+#    vals[0:16]=np.exp(-0.001*angles[0:16]**2)
+#    vals[15:]=np.exp(-0.01*angles[15:]**2)    
 #
-#c = nansum_arr(a,b)
+#    bounds = 15
+#    pts_hor, weights_hor=np.polynomial.legendre.leggauss(5)
+#    pts_hor=pts_hor*bounds
+#   
+#    pts_ver, weights_ver=np.polynomial.legendre.leggauss(9)
+#    pts_ver=pts_ver*bounds
+#    
+#    uu = vector_1d_to_polar(angles,vals,pts_hor,pts_ver).T
+#    
+#    plt.imshow(uu)
+    
+    
+    a = np.random.rand(147,)
+    a[138:] = np.nan
+    b = np.random.rand(138,)
+    
+    
+    a = nansum_arr(a,b,-1)
+    
 #def fast_regridding_weights(img, zoom):
 #    N,M=img.shape
 #    o_grid=np.meshgrid(range(0,N),range(0,M))

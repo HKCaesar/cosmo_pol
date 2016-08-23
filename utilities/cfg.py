@@ -68,7 +68,7 @@ VALID_VALUES={
     'refraction':
         {'scheme':[1,2]},\
     'integration':
-        {'scheme':[1,2],\
+        {'scheme':[1,2,3,4],\
         'nv_GH':np.arange(1,31,2),\
         'nh_GH':np.arange(1,31,2),\
         'n_gaussians':np.arange(1,13,2),\
@@ -110,7 +110,7 @@ def check_valid(section,key, value):
                 message = 'Invalid value for the "'+section+': '+key+'" parameter \n'+\
                     'Please choose one of the following values: '+\
                     '['+', '.join([str(s) for s in valid_vals])+'] \n'\
-                    'Using default option: "'+section+': '+key+'" = '+str(DEFAULTS[section][key]+'\n')
+                    'Using default option: "'+section+': '+key+'" = '+str(DEFAULTS[section][key])+'\n'
         elif valid_vals == FLAG_NUMBER:
             if not hasattr(value, '__len__'):
                 value = [value]
@@ -158,7 +158,7 @@ def init(options_file):
                     print('Trying to fit sum of gaussians on the provided antenna diagram...\n')
                     data = np.genfromtxt(CONFIG[section]['antenna_diagram'],delimiter=',')
                     x = data[:,0]
-                    y = data[:,1]
+                    y = 10*np.log10((10**(0.1*data[:,1]))**2)
                     gauss_params = optimize_gaussians(x,y,CONFIG[section]['n_gaussians'])
                     CONFIG[section]['antenna_params'] = gauss_params
                     print('Fit was successful !\n')
