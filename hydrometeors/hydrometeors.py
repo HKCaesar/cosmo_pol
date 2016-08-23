@@ -389,6 +389,8 @@ class Graupel(Solid):
             print('if scheme == ''2mom'', input must be (QM)')
             
     def get_axis_ratio(self,D): # Garrett, 2015 http://onlinelibrary.wiley.com/doi/10.1002/2015GL064040/full
+        if np.isscalar(D):
+            D=np.array([D])
         ar=0.9*np.ones(len(D),)
         return 1.0/ar
     

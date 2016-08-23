@@ -3,86 +3,86 @@ import numpy.ma as ma
 from scipy.interpolate import interp1d
 from scipy.signal import medfilt
 import matplotlib.pyplot as plt
-from cosmo_pol.utilities import tictoc
 import multiprocessing as mp
 from functools import partial
 
 from kdp_estimation_backward_fixed import kdp_estimation_backward_fixed
 from kdp_estimation_forward_fixed import kdp_estimation_forward_fixed
-from cosmo_pol.radar import small_radar_db
-from cosmo_pol import pycosmo
 
 
-#+
+'''
+ NAME:
+    kdp_estimation_kalman_v11
 
-# NAME:
-#    kdp_estimation_kalman_v11
-#
-# PURPOSE:
-#    Processing one profile of Psidp and estimating Kdp and Phidp
-#    with the KFE algorithm described in Schneebeli et al, 2014
-#    IEEE_TGRS.
-#    NOTE: Psidp should be unwrapped and censored BEFORE this routine
-#
-# AUTHOR(S):
-#    Marc Schneebeli: original code
+ PURPOSE:
+    Processing one profile of Psidp and estimating Kdp and Phidp
+    with the KFE algorithm described in Schneebeli et al, 2014
+    IEEE_TGRS.
+    NOTE: Psidp should be unwrapped and censored BEFORE this routine
 
-#    Jacopo Grazioli: current version
-#
-# CALLING SEQUENCE:
-#  Kdp_estimation_Kalman_V11,Psidp_in,$
-#                              dr,$
-#                              Kdp_filter_out,$
-#                              phidp_filter_out,$
-#                              Kdp_std,$
-#                              Rcov=Rcov,$
-#                              Pcov=Pcov
-#
-# INPUT PARAMETERS:
-#    psidp_in    :  one-dimensional vector of length -nrg-
-#                   containining the input psidp [degrees]
-#    dr:            scalar [km], range resolution
-#
-#
-# OUTPUT
-#    kdp_filter_out: vector, same length of psidp_in
-#                    containing the estimated kdp profile
-#    phidp_filter_out: estimated phidp (smooth psidp)
-#
-# INPUT KEYWORDS:
-#    Rcov, Pcov:  error covariance matrix of state transition
-#                 (Pcov), and of measurements (Rcov).
-#                 If not set, or if set to objects with less
-#                 than 2 elements, a default parametrization
-#                 is used, valid for X-band and 75m gate resolution.
-#                 Pcov is a 4x4 and Rcov a 3x3 matrix
-#
-# OUTPUT KEYWORDS:
-#
-#
-# COMMON BLOCKS:
-#   ;
-# DEPENDENCIES:
-#   kdp_estimation_forward_fixed
-#   kdp_Estimation_backward_fixed
-#
-# MODIFICATION HISTORY:
-#   2012/2013: Schneebeli, creation
-#   July 2015: re-implementation J. Grazioli
-#    speed optimization, vectorization, set the defaults and group
-#    the parameters to allow future flexibility
-#    but the global
-#    structure is kept, to be consistent with pre-existing
-#    routines
+ AUTHOR(S):
+    Marc Schneebeli: original code
+
+    Jacopo Grazioli: current version
+
+    Daniel Wolfensberger: Python version
+    
+ CALLING SEQUENCE:
+  Kdp_estimation_Kalman_V11,Psidp_in,$
+                              dr,$
+                              Kdp_filter_out,$
+                              phidp_filter_out,$
+                              Kdp_std,$
+                              Rcov=Rcov,$
+                              Pcov=Pcov
+
+ INPUT PARAMETERS:
+    psidp_in    :  one-dimensional vector of length -nrg-
+                   containining the input psidp [degrees]
+    dr:            scalar [km], range resolution
+
+
+ OUTPUT
+    kdp_filter_out: vector, same length of psidp_in
+                    containing the estimated kdp profile
+    phidp_filter_out: estimated phidp (smooth psidp)
+
+ INPUT KEYWORDS:
+    Rcov, Pcov:  error covariance matrix of state transition
+                 (Pcov), and of measurements (Rcov).
+                 If not set, or if set to objects with less
+                 than 2 elements, a default parametrization
+                 is used, valid for X-band and 75m gate resolution.
+                 Pcov is a 4x4 and Rcov a 3x3 matrix
+
+ OUTPUT KEYWORDS:
+
+
+ COMMON BLOCKS:
+   ;
+ DEPENDENCIES:
+   kdp_estimation_forward_fixed
+   kdp_Estimation_backward_fixed
+
+ MODIFICATION HISTORY:
+   2012/2013: Schneebeli, creation
+   July 2015: re-implementation J. Grazioli
+    speed optimization, vectorization, set the defaults and group
+    the parameters to allow future flexibility
+    but the global
+    structure is kept, to be consistent with pre-existing
+    routines
+   August 2016: Rewritten in Python, D.Wolfensberger
 
 SCALERS = [0.1,10**(-0.8),10**(-0.6), 10**(-0.4), 10**(-0.2), 1,
            10**(-0.2), 10**(-0.4), 10**(-0.6), 10**(-0.8),1, 10]
 
+'''
 def estimate_kdp_kalman(psidp,dr, band = 'C', rcov = 0, pcov = 0):
     masked = psidp.mask
     
     pool = mp.Pool(processes = mp.cpu_count(),maxtasksperchild=1)
-    func=partial(kdp_estimation_kalman_v11,dr = dr, band = band, rcov = rcov, pcov = pcov)
+    func = partial(kdp_estimation_kalman_v11,dr = dr, band = band, rcov = rcov, pcov = pcov)
     all_psidp = list(psidp)
     list_est = pool.map(func,all_psidp)
     kdp = np.zeros(psidp.shape)*np.nan
@@ -104,6 +104,7 @@ def estimate_kdp_kalman(psidp,dr, band = 'C', rcov = 0, pcov = 0):
     pool.close()
     
     return kdp, kdp_stdev, phidp_rec
+
     
 def estimate_kdp_vulpiani(psidp,dr,windsize = 7,  band = 'C', interpolate = False):
     masked = psidp.mask
@@ -128,15 +129,8 @@ def estimate_kdp_vulpiani(psidp,dr,windsize = 7,  band = 'C', interpolate = Fals
     
     return kdp, phidp_rec
     
-    
 def kdp_estimation_kalman_v11(psidp_in, dr, band = 'X', rcov = 0, pcov = 0):
-#   _opt = (rcov, pcov)
-#   def _ret():
-#      _optrv = zip(_opt, [rcov, pcov])
-#      _rv = [psidp_in, dr, kdp_filter_out, phidp_filter_out, kdp_std]
-#      _rv += [_o[1] for _o in _optrv if _o[0] is not None]
-#      return tuple(_rv)
-#   
+
    # COMPILE_OPT STRICTARR
    
    #NOTE! Parameters are not checked to save as much time as possible

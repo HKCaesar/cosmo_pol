@@ -18,23 +18,24 @@ from cosmo_pol.constants import constants
 from cosmo_pol.hydrometeors import hydrometeors
 from cosmo_pol.lookup.lut import Lookup_table
 
-FOLDER_LUT=os.path.dirname(os.path.realpath(__file__))+'/stored_lut/'
-FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut/'
+FOLDER_LUT=os.path.dirname(os.path.realpath(__file__))+'/stored_lut_m21/'
+FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut_21/'
 
-GENERATE_1MOM=True
-GENERATE_2MOM=False
+GENERATE_1MOM=False
+GENERATE_2MOM=True
 
-FORCE_REGENERATION_SCATTER_TABLES=True
+FORCE_REGENERATION_SCATTER_TABLES=False
 
 ELEVATIONS = range(0,91,2)
 TEMPERATURES_LIQ = range(262,316,2)
 TEMPERATURES_SOL = range(200,278,2)
 
-FREQUENCIES=[2.7,4.15,5.6,7.7,9.8,11.7,13.6,24.6,35.6]    
-FREQUENCIES = [9.41]    
+FREQUENCIES=[2.7,4.15,5.6,7.7,9.41,9.8,11.7,13.6,24.6,35.6]    
+
 NUM_DIAMETERS=1024
 
 HYDROM_TYPES=['R','S','G','H'] # Rain, snow, graupel and hail
+HYDROM_TYPES=['S','G'] # Rain, snow, graupel and hail
 
 global SCATTERER
 
