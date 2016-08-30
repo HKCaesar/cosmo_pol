@@ -11,15 +11,16 @@ import gzip
 from pytmatrix import orientation
 from pytmatrix.tmatrix import Scatterer
 import multiprocessing
-
+from cosmo_pol.utilities import tictoc
 from joblib import Parallel, delayed  
-    
+
+from cosmo_pol.utilities import tictoc
 from cosmo_pol.constants import constants
 from cosmo_pol.hydrometeors import hydrometeors
 from cosmo_pol.lookup.lut import Lookup_table
 
 FOLDER_LUT=os.path.dirname(os.path.realpath(__file__))+'/stored_lut_m21/'
-FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut_21/'
+FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut_m21/'
 
 GENERATE_1MOM=False
 GENERATE_2MOM=True
@@ -35,7 +36,6 @@ FREQUENCIES=[2.7,4.15,5.6,7.7,9.41,9.8,11.7,13.6,24.6,35.6]
 NUM_DIAMETERS=1024
 
 HYDROM_TYPES=['R','S','G','H'] # Rain, snow, graupel and hail
-HYDROM_TYPES=['S','G'] # Rain, snow, graupel and hail
 
 global SCATTERER
 
@@ -53,7 +53,6 @@ def compute_sz(hydrom,freq,elevation,T, list_D):
     
     geom_back=(90-elevation, 180-(90-elevation), 0., 180, 0.0,0.0)
     geom_forw=(90-elevation, 90-elevation, 0., 0.0, 0.0,0.0)
-    
 
     for i,D in enumerate(list_D):
         
@@ -71,7 +70,6 @@ def compute_sz(hydrom,freq,elevation,T, list_D):
         S_forw=SCATTERER.get_S()
 
         list_SZ.append([Z_back,S_forw])
-
     return list_SZ
 
 def flatten_matrices(list_matrices):

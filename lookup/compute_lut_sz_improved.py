@@ -11,10 +11,13 @@ import gzip
 from pytmatrix import orientation
 from pytmatrix.tmatrix import Scatterer
 import multiprocessing
-from scipy import special
+from scipy import special,stats
 
 from joblib import Parallel, delayed  
-    
+
+from cosmo_pol.interpolation import quadrature
+from cosmo_pol.utilities import tictoc
+
 from cosmo_pol.constants import constants
 from cosmo_pol.hydrometeors import hydrometeors
 from cosmo_pol.lookup.lut import Lookup_table
@@ -25,23 +28,20 @@ FOLDER_FINAL_LUT=os.path.dirname(os.path.realpath(__file__))+'/final_lut_quad/'
 GENERATE_1MOM=True
 GENERATE_2MOM=False
 
-FORCE_REGENERATION_SCATTER_TABLES=True
+FORCE_REGENERATION_SCATTER_TABLES=False
 
 ELEVATIONS = range(0,91,2)
 TEMPERATURES_LIQ = range(262,316,2)
 TEMPERATURES_SOL = range(200,278,2)
 
 FREQUENCIES=[2.7,4.15,5.6,7.7,9.8,11.7,13.6,24.6,35.6]      
+FREQUENCIES=[9.41]      
 NUM_DIAMETERS=1024
 
 N_QUAD_PTS = 5
+MAX_AR = 7
 
-HYDROM_TYPES=['S','G','H'] # Rain, snow, graupel and hail
-
-
-global QUAD_PTS, QUAD_WEIGHTS
-# These are the basis GH points that need to be computed only once
-QUAD_PTS, QUAD_WEIGHTS = np.polynomial.hermite.hermgauss(N_QUAD_PTS)
+HYDROM_TYPES=['S','G','H','R'] # Rain, snow, graupel and hail
 
 global SCATTERER
 
@@ -52,63 +52,65 @@ def create_scatterer(wavelength,orientation_std):
     scatt.orient = orientation.orient_averaged_fixed
     return scatt
 
-def compute_sz_with_quad(hydrom,freq,elevation,T, list_D):
-    print(T)
+def compute_gautschi_canting(list_of_std):
+    scatt = Scatterer(radius = 5.0)
+    
+    gautschi_pts = []
+    gautschi_w = []
+    for l in list_of_std:
+        scatt.or_pdf = orientation.gaussian_pdf(std=l)
+        scatt.orient = orientation.orient_averaged_fixed
+        scatt._init_orient()
+        gautschi_pts.append(scatt.beta_p)
+        gautschi_w.append(scatt.beta_w)
+        
+    return(gautschi_pts,gautschi_w)
+
+def compute_gautschi_ar(ar_alpha,ar_loc,ar_beta):
+    gautschi_pts = []
+    gautschi_w = []
+    for l in zip(ar_alpha,ar_loc,ar_beta):
+        gamm = stats.gamma(l[0],l[1],l[2])
+        pts,wei = quadrature.get_points_and_weights(lambda x: gamm.pdf(x),num_points=N_QUAD_PTS,left=l[1],right=MAX_AR)
+        gautschi_pts.append(pts)
+        gautschi_w.append(wei)        
+    return(gautschi_pts,gautschi_w)
+    
+def compute_sz_with_quad(hydrom,freq,elevation,T, quad_pts_w,quad_pts_ar,list_D):
     list_SZ=[]
 
     m_func = hydrom.get_m_func(T,freq)    
     
     geom_back=(90-elevation, 180-(90-elevation), 0., 180, 0.0,0.0)
     geom_forw=(90-elevation, 90-elevation, 0., 0.0, 0.0,0.0)
-    
-    quad_flag = False # Flag to state if axis-ratio integration must be performed
-    if hasattr(hydrom,'get_axis_ratio_pdf_masc'):
-        ar_alpha, ar_loc, ar_scale = hydrom.get_axis_ratio_pdf_masc(list_D)
-        quad_flag = True
-    else:
-        ar = hydrom.get_axis_ratio(list_D)
-    
-    if hasattr(hydrom,'get_canting_std_masc'):
-        canting_std = hydrom.get_axis_ratio_masc(list_D)
-    else:
-        canting_std = hydrom.canting_angle_std * np.ones((len(list_D,)))
-
+    print(T)
     for i,D in enumerate(list_D):
-
         SCATTERER.radius = D/2.
         SCATTERER.m = m_func(D)
-        SCATTERER.or_pdf = orientation.gaussian_pdf(std=canting_std[i])
-        SCATTERER.orient = orientation.orient_averaged_fixed
+        SCATTERER.beta_p = quad_pts_w[0][i]
+        SCATTERER.beta_w = quad_pts_w[1][i]        
         
-        if not quad_flag: # Simply consider one single axis-ratio
-            # Backward scattering (note that we do not need amplitude matrix for backward scattering)
-            SCATTERER.axis_ratio = ar[i]
-            SCATTERER.set_geometry(geom_back)
-            Z_back=SCATTERER.get_Z()
-            # Forward scattering (note that we do not need phase matrix for forward scattering)
-            SCATTERER.set_geometry(geom_forw)
-            S_forw=SCATTERER.get_S()
-        else: # Integrate over axis-ratio pdf with quadrature
-            quad_pts, quad_weights = special.la_roots(N_QUAD_PTS, ar_alpha[i]-1, mu=False)
-            ar_GH_pts = quad_pts * ar_scale[i] + ar_loc[i]
-            ar_GH_weights = quad_weights/(special.gamma(ar_alpha[i]))
-            Z_back = np.zeros((4,4))     
-            SCATTERER.set_geometry(geom_back)        
-            for pt, we in zip(ar_GH_pts,ar_GH_weights):
-                SCATTERER.axis_ratio = pt
-                Z_ar = SCATTERER.get_Z()
-                Z_back += we * Z_ar
-                
-            S_forw = np.zeros((2,2), dtype=complex)
-            SCATTERER.set_geometry(geom_forw)                
-            for pt, we in zip(ar_GH_pts,ar_GH_weights):
-                
-                SCATTERER.axis_ratio = pt
-                S_ar = SCATTERER.get_S()
-                S_forw += we * S_ar
-                
+        # Integrate over axis-ratio pdf with quadrature
+#            quad_pts, quad_weights = special.la_roots(N_QUAD_PTS, ar_alpha[i]-1, mu=False)
+#            ar_GH_pts = quad_pts * ar_scale[i] + ar_loc[i]
+#            ar_GH_weights = quad_weights/(special.gamma(ar_alpha[i]))
+        
+        Z_back = np.zeros((4,4))     
+        SCATTERER.set_geometry(geom_back)        
+        for pt, we in zip(quad_pts_ar[0][i],quad_pts_ar[1][i]):
+            SCATTERER.axis_ratio = pt
+            Z_ar = SCATTERER.get_Z()
+            Z_back += we * Z_ar
+            
+        S_forw = np.zeros((2,2), dtype=complex)
+        SCATTERER.set_geometry(geom_forw)                
+        for pt, we in zip(quad_pts_ar[0][i],quad_pts_ar[1][i]):
+            
+            SCATTERER.axis_ratio = pt
+            S_ar = SCATTERER.get_S()
+            S_forw += we * S_ar
         list_SZ.append([Z_back,S_forw])
-        
+    print('done')
     return list_SZ
     
 def flatten_matrices(list_matrices):
@@ -142,6 +144,27 @@ def sz_lut(scheme,hydrom_type,list_frequencies,list_elevations, list_temperature
     
     list_D=np.linspace(hydrom.d_min,hydrom.d_max,NUM_DIAMETERS).astype('float32')
     
+    # In order to save time, we precompute the points of the canting quadrature
+    # (since they are independent of temp, elev and frequency)
+    if hasattr(hydrom,'get_axis_ratio_pdf_masc'):
+        canting_stdevs = hydrom.get_canting_angle_std_masc(list_D)
+    else:
+        canting_stdevs = hydrom.canting_angle_std * np.ones((len(list_D,)))
+    
+    quad_pts_canting = compute_gautschi_canting(canting_stdevs)
+        
+    # In order to save time, we precompute the points of the ar quadrature
+    # (since they are independent of temp, elev and frequency)
+    
+    if hasattr(hydrom,'get_axis_ratio_pdf_masc'):
+        ar_alpha, ar_loc, ar_scale = hydrom.get_axis_ratio_pdf_masc(list_D)
+        quad_pts_ar = compute_gautschi_ar(ar_alpha, ar_loc, ar_scale)
+    else:
+        # If no pdf is available we just take a quadrature of one single point
+        # (the axis-ratio) with a weight of one, for sake of generality
+        ar = hydrom.get_axis_ratio(list_D)
+        quad_pts_ar = ([[a] for a in ar],[[1]]*len(ar))
+
     num_cores = multiprocessing.cpu_count()
     
     for f in list_frequencies:
@@ -155,9 +178,10 @@ def sz_lut(scheme,hydrom_type,list_frequencies,list_elevations, list_temperature
         
         for i,e in enumerate(list_elevations):    
             print 'Running elevation : ' + str(e)
-            results = (Parallel(n_jobs=num_cores)(delayed(compute_sz_with_quad)(hydrom,f,e,t, list_D) for t in list_temperatures))
+            results = (Parallel(n_jobs=num_cores)(delayed(compute_sz_with_quad)(hydrom,f,e,t,quad_pts_canting,quad_pts_ar, list_D) for t in list_temperatures))
+#            results = [compute_sz_with_quad(hydrom,f,e,t,quad_pts_canting,quad_pts_ar, list_D) for t in list_temperatures]        
             arr_SZ = flatten_matrices(results)
-            
+        
             SZ_matrices[i,:,:,:] = arr_SZ
             
         lut_SZ = Lookup_table()

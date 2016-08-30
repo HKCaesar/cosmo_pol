@@ -1,3 +1,4 @@
+
 # lookup_table - multidimensional lookup table class
 # Copyright (C) 2007 RADLogic
 # 

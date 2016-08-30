@@ -49,8 +49,8 @@ def get_radar_observables(list_beams, lut_sz):
         # Diameter bin size
         dD = list_D[1] - list_D[0]
         
-        for i,beam in enumerate(list_beams[0:]): # Loop on subbeams
-        
+        for i,beam in enumerate(list_beams): # Loop on subbeams
+            
             # For GPM some sub-beams are longer than the main beam, so we discard
             # the "excess" part
             for k in beam.values.keys():
@@ -100,11 +100,10 @@ def get_radar_observables(list_beams, lut_sz):
             ''' 
             Part 3 : Integrate the SZ coefficients
             '''
-
             sz_psd_integ = np.einsum('ijk,ji->ik',sz,N) * dD 
             
-            sz_integ[valid_data,j,:] = nansum_arr(sz_integ[valid_data,j,:],
-                                            sz_psd_integ*beam.GH_weight)
+            sz_integ[valid_data,j,:] = nansum_arr(sz_integ[valid_data,j,:],  sz_psd_integ*beam.GH_weight)
+
     
     # Finally we integrate for all hydrometeors
     sz_integ = np.nansum(sz_integ,axis=1)
@@ -112,10 +111,11 @@ def get_radar_observables(list_beams, lut_sz):
     
     # Get radar observables
     ZH,ZV,ZDR,RHOHV,KDP,AH,AV,DELTA_HV = get_pol_from_sz(sz_integ)
+            
 #    print 10*np.log10(ZH)[0]
 #    print(sz_integ[0])
     KDP_m = KDP + DELTA_HV # Account for differential phase on prop.       
-    PHIDP = nan_cumsum(2 * KDP_m) * radial_res/1000
+    PHIDP = nan_cumsum(2 * KDP_m) * radial_res/1000.
 
     if att_corr:
         # AH and AV are in dB so we need to convert them to linear

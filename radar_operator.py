@@ -17,6 +17,7 @@ import sys
 from functools import partial
 import multiprocess as mp
 import numpy as np
+import copy
 
 import cosmo_pol.pycosmo as pycosmo
 from cosmo_pol.radar.pyart_wrapper import PyradRadop,PyradRadopVProf, RadarDisplay
@@ -32,7 +33,7 @@ BASE_VARIABLES=['U','V','W','QR_v','QS_v','QG_v','RHO','T']
 BASE_VARIABLES_2MOM=['QH_v','QNH_v','QNR_v','QNS_v','QNG_v']
 
 class RadarOperator():
-    def __init__(self, options_file='./option_files/MXPOL_RHI.yml', diagnostic_mode=False):
+    def __init__(self, options_file='', diagnostic_mode=False):
         # delete the module's globals
         print('Reading options defined in options file')
         cfg.init(options_file) # Initialize options with 'options_radop.txt'   
@@ -83,15 +84,15 @@ class RadarOperator():
         return dic_vars, N, lut_sz, diag_mode
 
     def load_model_file(self, filename, cfilename=''):
-        file_h=pycosmo.open_file(filename)
-        vars_to_load=BASE_VARIABLES
-    
-        # Check if necessary variables are present in file
+        file_h = pycosmo.open_file(filename)
+        vars_to_load = copy.deepcopy(BASE_VARIABLES)
         
+        # Check if necessary variables are present in file
+
         base_vars_ok = pycosmo.check_if_variables_in_file(file_h,['P','T','QV','QR','QC','QI','QS','QG','U','V','W'])
         two_mom_vars_ok = pycosmo.check_if_variables_in_file(file_h,['QH','QNH','QNR','QNS','QNG'])
         
-        if cfg.CONFIG['refraction']['scheme']==2:
+        if cfg.CONFIG['refraction']['scheme'] == 2:
             if pycosmo.check_if_variables_in_file(file_h,['T','P','QV']):
                 vars_to_load.extend('N')
             else:
@@ -109,6 +110,7 @@ class RadarOperator():
                       'was not found in file. No correction will be done')
                 cfg.CONFIG['add_turbulence_effect']=False
         
+        
         if not base_vars_ok:
             print('Not all necessary variables could be found in file')
             print('For 1-moment scheme, the COSMO file must contain:')
@@ -122,14 +124,20 @@ class RadarOperator():
         elif base_vars_ok and not two_mom_vars_ok:
             print('Using 1-moment scheme')
             cfg.CONFIG['microphysics']['scheme'] = 1
+            self.current_microphys_scheme = 1
         elif base_vars_ok and two_mom_vars_ok:
             vars_to_load.extend(BASE_VARIABLES_2MOM)
             print('Using 2-moment scheme')
             cfg.CONFIG['microphysics']['scheme'] = 2
+            self.current_microphys_scheme = 2
+    
             
         # Read variables from GRIB file
-        loaded_vars=pycosmo.get_variables(file_h,vars_to_load,get_proj_info=True,shared_heights=True,assign_heights=True,c_file=cfilename)
-        self.dic_vars=loaded_vars #  Assign to class
+        print('Reading variables ',vars_to_load,' from file')
+
+        loaded_vars = pycosmo.get_variables(file_h,vars_to_load,get_proj_info=True,shared_heights=True,assign_heights=True,c_file=cfilename)
+
+        self.dic_vars = loaded_vars #  Assign to class
         if 'N' in loaded_vars.keys():
             self.N=loaded_vars['N']
             self.dic_vars.pop('N',None) # Remove N from the variable dictionnary (we won't need it there)
@@ -320,7 +328,7 @@ class RadarOperator():
                 
         for a in azimuths: # Loop on the o
             func=partial(worker,event,a) # Partial function
-            list_beams = map(func,elevations)
+            list_beams = pool.map(func,elevations)
             list_sweeps.append(list_beams)
             
         pool.close()   
@@ -377,9 +385,12 @@ class RadarOperator():
                     cfg.CONFIG['radar']['coords']=[params[3],params[4],params[5]]
                     
                     list_GH_pts = interpolation.get_profiles_GH(dic_vars,azimuth, elev,N=N)
-                    pol_beam = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
+                    output = scattering_sz.get_radar_observables(list_GH_pts,lut_sz)
 
-                    return pol_beam
+                    if diag_mode:
+                        output=utilities.combine_beams((output, interpolation.integrate_GH_pts(list_GH_pts)))
+                        
+                    return output
             except:
                 # Throw signal back
                 raise

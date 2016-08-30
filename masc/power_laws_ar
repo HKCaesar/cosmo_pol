@@ -1,6 +1,3 @@
 Aggregates: alpha: a = 8.42003348664, b = -0.568465084269 
 Aggregates: loc: a = 1.0, b = 0.0 
 Aggregates: scale: a = 0.0527252217284, b = 0.792594862923 
-graupel: alpha: a = 1.97869286543, b = -0.426770312328 
-graupel: loc: a = 1.0, b = 0.0 
-graupel: scale: a = 0.0743715480794, b = 0.672627814141 

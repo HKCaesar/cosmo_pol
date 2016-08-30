@@ -450,16 +450,16 @@ if __name__=='__main__':
     import gzip
     plt.close('all')
 #    
-#    lut1 = pickle.load(gzip.open('/media/wolfensb/Storage/cosmo_pol/lookup/stored_lut/lut_SZ_S_9_41_1mom.pz','rb'))
-#    dd2 = lut1.value_table[10,10,:,0]
-#    
-#    lut2 = pickle.load(gzip.open('/media/wolfensb/Storage/cosmo_pol/lookup/stored_lut/lut_SZ_S_9_41_2mom.pz','rb'))
-#    dd = lut2.value_table[10,10,:,0]
+    lut1 = pickle.load(gzip.open('/media/wolfensb/Storage/cosmo_pol/lookup/stored_lut/lut_SZ_G_9_41_1mom.pz','rb'))
+    dd2 = lut1.value_table[10,10,:,0]
+    
+    lut2 = pickle.load(gzip.open('/media/wolfensb/Storage/cosmo_pol/lookup/stored_lut_m21/lut_SZ_G_9_41_2mom.pz','rb'))
+    dd = lut2.value_table[10,10,:,0]
 #        
-#    plt.figure()
-#    plt.plot(dd)
-#    plt.hold(True)
-#    plt.plot(dd2)
+    plt.figure()
+    plt.plot(dd)
+    plt.hold(True)
+    plt.plot(dd2)
     
     
     
