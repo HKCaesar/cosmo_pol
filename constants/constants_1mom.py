@@ -5,7 +5,7 @@ Created on Thu Feb  4 13:46:57 2016
 @author: wolfensb
 """
 import scipy.special as spe
-from cosmo_pol.constants import constants
+from cosmo_pol.constants.constants import constants
 import numpy as np
 
 #,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
@@ -34,8 +34,8 @@ N0_I=1.0E2 # mm-1 m-3
 # Snow PSD
 B_S=2 # power
 A_S=0.038/(1000**B_S)  # kg * mm^-2 
-ALPHA_S=4.9/np.sqrt(1000) # mm^0.5*s-1
-BETA_S=0.5
+ALPHA_S=4.9*(1000**-0.25) # mm^0.5*s-1
+BETA_S=0.25
 MU_S=0.0
 D_MIN_S=0.2
 D_MAX_S=20

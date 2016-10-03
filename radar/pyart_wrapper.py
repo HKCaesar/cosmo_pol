@@ -7,10 +7,8 @@ Created on Wed Jan 27 10:41:15 2016
 
 import cosmo_pol.constants.constants as constants
 
-from kdp_estimation_kalman_v11 import estimate_kdp_kalman, estimate_kdp_vulpiani,filter_psidp
-
-import read_radar_data
-import pyart
+from cosmo_pol.radar import read_radar_data
+from pyart import graph, filters, config, core, correct
 import os, glob, datetime
 import numpy as np
 import re
@@ -51,30 +49,15 @@ VMAX_SIMUL={'ZH':55,'KDP':1,'PHIDP':20,'RHOHV':1,'ZDR':2,'RVEL':25,'DSPECTRUM':3
 'QG_v':1E-3,'QH_v':1E-2}
 
 
-''' Inputs :
--------------------------------------------------------------------------------
-  - filename : string:  Path of the radar PPI scan
-  - high_res : boolean: True if high_res (83.3 m. radial res)
-                        False if low_res (500 m. radial res)
-  - vol_scan : boolean: True if all PPI scans for all elevations at that time-
-                        step need to be loeaded
-                        False if only that given scan (specified by filename)
-                        needs to be loaded
-  - max_range : float : maximum range from the radar to be considered (default
-                        is infinity)
-  - min_range : float : minimum range from the radar to be considered (default
-                        is 10 km)
-                        
-'''
 
-class RadarDisplay(pyart.graph.radardisplay.RadarDisplay):
+class RadarDisplay(graph.radardisplay.RadarDisplay):
     def __init__(self, radar, shift=(0.0, 0.0)):
         self.scan_type = None
         self._radar = None
         super(RadarDisplay,self).__init__(radar, shift=(0.0, 0.0))
 
     def plot(self, fields,sweep=0, max_range = 100000, **kwargs):
-        filt = pyart.filters.GateFilter(self._radar)
+        filt = filters.GateFilter(self._radar)
         filt.exclude_above('range',max_range)
         
         if self.scan_type == 'vprof':
@@ -95,7 +78,7 @@ class RadarDisplay(pyart.graph.radardisplay.RadarDisplay):
             
         ranges = self._radar.range['data']
             
-        ax, fig = pyart.graph.common.parse_ax_fig(ax, fig)
+        ax, fig = graph.common.parse_ax_fig(ax, fig)
         ax.hold(True)
         for field in fields:
             data = self._radar.get_field(sweep, field)
@@ -109,19 +92,19 @@ class RadarDisplay(pyart.graph.radardisplay.RadarDisplay):
                 field=field, ax=ax, fig=fig)
             else:
                 if norm is None:
-                    vmin, vmax = pyart.graph.common.parse_vmin_vmax(self._radar, field, vmin, vmax)
+                    vmin, vmax = graph.common.parse_vmin_vmax(self._radar, field, vmin, vmax)
                 else:
                     vmin = None
                     vmax = None
                 if cmap is None:
-                    cmap = pyart.config.get_field_colormap(field)
+                    cmap = config.get_field_colormap(field)
                     ax.plot(data,ranges,linewidth=2)
                 self.set_limits(ylim=[0,10000])
                 ax.set_xlabel(VAR_LABELS_SIMUL[field]+' ('+UNITS_SIMUL[field]+')')
         ax.grid()
         ax.set_ylabel('Height above radar [m]')
         
-class PyradRadop(pyart.core.Radar):
+class PyradRadop(core.Radar):
     def __init__(self,scan_type, scan):
                     
         N_sweeps=len(scan['data'])
@@ -135,6 +118,7 @@ class PyradRadop(pyart.core.Radar):
         sweep_stop_ray_index={}
         sweep_stop_ray_index['data']=[]
         
+        # Get all variables names
         varnames=scan['data'][0][0].values.keys()
     
         for i,k in enumerate(varnames):
@@ -157,7 +141,10 @@ class PyradRadop(pyart.core.Radar):
                 fields[k]['valid_max']=VMAX_SIMUL[k]
             except: 
                 pass
-                
+        # Add latitude and longitude
+        fields['Latitude'] = {'data':[],'units':['degrees']}
+        fields['Longitude'] = {'data':[],'units':['degrees']}    
+        
         # Initialize
         idx_start=0
         idx_stop=0
@@ -172,8 +159,15 @@ class PyradRadop(pyart.core.Radar):
                 if k in ['ZDR','ZV','ZH','DSpectrum']: # Convert to dB
                     polar_data_sweep[k][polar_data_sweep[k]==0]=float('nan')
                     polar_data_sweep[k]=10*np.log10(polar_data_sweep[k])
-                    
-            [N_angles,N_ranges]=polar_data_sweep[varnames[0]].shape
+                
+            # Add also latitude and longitude to variables
+            polar_data_sweep['Latitude'] = \
+                np.array([it.lats_profile for it in scan['data'][i]])
+            polar_data_sweep['Longitude'] = \
+                np.array([it.lons_profile for it in scan['data'][i]])
+                                                                                
+            
+            [N_angles,N_ranges] = polar_data_sweep[varnames[0]].shape
             
             idx_stop=idx_start+N_angles-1
             sweep_start_ray_index['data'].append(idx_start)
@@ -189,20 +183,25 @@ class PyradRadop(pyart.core.Radar):
                 elevations.extend(list(scan['elevations']))
                 azimuths.extend(list([scan['azimuths'][i]]*N_angles))
                 
-            for k in varnames:
+            for k in polar_data_sweep.keys():
                 if not len(fields[k]['data']):
-                    fields[k]['data']=polar_data_sweep[k]
+                    fields[k]['data'] = polar_data_sweep[k]
                 else:
-                    fields[k]['data']=read_radar_data.row_stack(fields[k]['data'],polar_data_sweep[k])
+                    fields[k]['data'] = read_radar_data.row_stack(fields[k]['data'],
+                                                    polar_data_sweep[k])
 
-        for k in varnames:
-            fields[k]['data']=np.ma.array(fields[k]['data'],mask=np.isnan(fields[k]['data']))
-        
-        
-        metadata={}
-        
+        for k in polar_data_sweep.keys():
+            fields[k]['data']=np.ma.array(fields[k]['data'],
+                                mask=np.isnan(fields[k]['data']))
+        # Add velocities (for Doppler spectrum) in instrument param
+        try:
+            instrument_parameters={'varray': {'data':constants.VARRAY}}
+        except:
+            pass
         
         # Position and time are obtained from the pos_time field of the scan dictionary
+        # Note that these latitude and longitude are the coordinates of the radar
+        # whereas the latitude and longitude fields are the coords of every gate
         latitude={'data' : np.array(scan['pos_time']['latitude'])}
         longitude={'data' :  np.array(scan['pos_time']['longitude'])}    
         altitude={'data' :  np.array(scan['pos_time']['altitude'])}   
@@ -213,8 +212,6 @@ class PyradRadop(pyart.core.Radar):
     
         sweep_number={'data' : np.arange(0,N_sweeps)}     
         sweep_mode={'data' : [scan_type]*N_sweeps}   
-
-        metadata={}
         
         azimuth={'data' : np.array(azimuths)}
         rrange={'data': scan['ranges']}
@@ -226,11 +223,13 @@ class PyradRadop(pyart.core.Radar):
         fields['range'] = {}
         fields['range']['data'] = np.tile(rrange['data'],(len(elevation['data']),1))
         
+        metadata = {}
+        
         # Create PyART instance
         super(PyradRadop,self).__init__(time,rrange,fields,metadata,
         scan_type,latitude,longitude,altitude,sweep_number,sweep_mode,
         fixed_angle,sweep_start_ray_index,sweep_stop_ray_index,azimuth, 
-        elevation)
+        elevation,instrument_parameters=instrument_parameters)
         
         
 class PyradRadopVProf(PyradRadop):
@@ -243,7 +242,7 @@ class PyradRadopVProf(PyradRadop):
         out = super(PyradRadopVProf,self).get_field(sweep_idx, variable)
         return np.squeeze(out)
         
-class PyradMXPOL(pyart.core.Radar):
+class PyradMXPOL(core.Radar):
     def __init__(self,filename, max_range=np.Inf,min_range=10000):
         
         # Get directory name
@@ -265,15 +264,15 @@ class PyradMXPOL(pyart.core.Radar):
         strdate=re.findall(r"([0-9]{8}-[0-9]{6})",fname_basename)[0] # Found out from the filename
         date=datetime.datetime.strptime(strdate,'%Y%m%d-%H%M%S')
         
-        varnames=['Zh','Zdr','Kdp','Phidp','Rhohv','ZhCorr','ZdrCorr','RVel','Sw']
+        varnames=['Zh','Zdr','Kdp','Phidp','Rhohv','ZhCorr','ZdrCorr','RVel','Sw','SNRh','SNRv','Psidp']
         labels=['Reflectivity','Diff. reflectivity','Spec. diff. phase','Diff. phase','Copolar corr. coeff','Att. corr reflectivity',\
-        'Att corr. diff. reflectivity.','Mean doppler velocity','Spectral Width']
+        'Att corr. diff. reflectivity.','Mean doppler velocity','Spectral Width','SNR at hor. pol.','SNR at vert. pol.','Total diff. phase']
         
-        units=['dBZ','dB','deg/km','deg','-','dBZ','dB','m/s','m2/s2']
+        units=['dBZ','dB','deg/km','deg','-','dBZ','dB','m/s','m2/s2','-','-','deg']
         
     
-        vmin=[0.,0.,0.,0.,0.6,0.,0.,-15.,0.]
-        vmax=[55.,3.,4.,45.,1.,55.,3.,15.,3.]
+        vmin=[0.,0.,0.,0.,0.6,0.,0.,-15.,0.,0.,0.,0.]
+        vmax=[55.,3.,4.,45.,1.,55.,3.,15.,3.,20.,20.,45.]
                 
         N_sweeps=len(all_files)
         fields={}
@@ -329,7 +328,7 @@ class PyradMXPOL(pyart.core.Radar):
                     print('Variable '+v+' was not found in file!')
         
         for v in varnames:
-            fields[v]['data']=np.ma.array(fields[v]['data'],mask=fields[v]['data'] == -99900.0)
+            fields[v]['data']=np.ma.array(fields[v]['data'],mask=fields[v]['data'] == -99900.0, fill_value = - -99900.0)
 
         metadata={}
         
@@ -361,55 +360,72 @@ class PyradMXPOL(pyart.core.Radar):
         super(PyradMXPOL,self).__init__(time,rrange,fields,metadata,scan_type,latitude,longitude,altitude,sweep_number,sweep_mode,fixed_angle,\
         sweep_start_ray_index,sweep_stop_ray_index,azimuth, elevation,instrument_parameters=instrument_parameters)
     
-    def estimate_KDP(self, method = 'vulpiani', minsize = 5, thresh_rhohv=0.65, max_discont = 90):
-        band = 'C'
-        dr = (self.range['data'][1] -  self.range['data'][0])/1000.
+#    def estimate_KDP(self, method = 'vulpiani', minsize = 5, thresh_rhohv=0.65, max_discont = 90):
+#        band = 'C'
+#        dr = (self.range['data'][1] -  self.range['data'][0])/1000.
+#
+#        kdp = {}
+#        kdp['data'] =  ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
+#        if method == 'kalman':
+#            stdev_kdp = {}
+#            stdev_kdp['data'] = ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
+#        phidp_filt = {}
+#        phidp_filt['data'] =ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
+#        
+#        # Filter Psidp
+#        idx_line = 0
+#        for n in self.sweep_number['data']:
+#            psidp_filt = filter_psidp(self.get_field(n,'Phidp'), self.get_field(n,'Rhohv'),
+#                         minsize, thresh_rhohv, max_discont)
+#            import matplotlib.pyplot as plt
+#            plt.imshow(psidp_filt)
+#            if method == 'vulpiani':
+#                a, b = estimate_kdp_vulpiani(psidp_filt, dr, windsize = 7, 
+#                                                band = band)
+#            elif method == 'kalman':
+#                a,c, b = estimate_kdp_kalman(psidp_filt, dr, band)
+#            dim = a.shape
+#            if method == 'kalman':
+#                stdev_kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = c
+#            kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = a
+#            phidp_filt['data'][idx_line:idx_line+dim[0],0:dim[1]] = b
+#            
+#            idx_line = idx_line + dim[0]
+#        
+#        kdp['units']='deg/km'
+#        kdp['valid_min']=np.nanmin(kdp['data'])
+#        kdp['valid_max']=np.nanmax(kdp['data'])    
+#        
+#        if method == 'kalman':
+#            stdev_kdp['units']='deg/km'
+#            stdev_kdp['valid_min']=np.nanmin(stdev_kdp['data'])
+#            stdev_kdp['valid_max']=np.nanmax(stdev_kdp['data'])    
+#            self.add_field('KDP_STD',stdev_kdp)
+#        phidp_filt['units']='deg'
+#        phidp_filt['valid_min']=np.nanmin(phidp_filt['data'])
+#        phidp_filt['valid_max']=np.nanmax(phidp_filt['data'])                
+#        
+#        self.add_field('Kdp',kdp)
+#        self.add_field('Phidp_filt',phidp_filt)
+#        
 
-        kdp = {}
-        kdp['data'] =  ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
-        if method == 'kalman':
-            stdev_kdp = {}
-            stdev_kdp['data'] = ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
-        phidp_filt = {}
-        phidp_filt['data'] =ma.masked_array(np.zeros(self.fields['Phidp']['data'].shape))*np.nan
-        
-        # Filter Psidp
-        idx_line = 0
-        for n in self.sweep_number['data']:
-            psidp_filt = filter_psidp(self.get_field(n,'Phidp'), self.get_field(n,'Rhohv'),
-                         minsize, thresh_rhohv, max_discont)
-            import matplotlib.pyplot as plt
-            plt.imshow(psidp_filt)
-            if method == 'vulpiani':
-                a, b = estimate_kdp_vulpiani(psidp_filt, dr, windsize = 7, 
-                                                band = band)
-            elif method == 'kalman':
-                a,c, b = estimate_kdp_kalman(psidp_filt, dr, band)
-            dim = a.shape
-            if method == 'kalman':
-                stdev_kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = c
-            kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = a
-            phidp_filt['data'][idx_line:idx_line+dim[0],0:dim[1]] = b
-            
-            idx_line = idx_line + dim[0]
-        
-        kdp['units']='deg/km'
-        kdp['valid_min']=np.nanmin(kdp['data'])
-        kdp['valid_max']=np.nanmax(kdp['data'])    
-        
-        if method == 'kalman':
-            stdev_kdp['units']='deg/km'
-            stdev_kdp['valid_min']=np.nanmin(stdev_kdp['data'])
-            stdev_kdp['valid_max']=np.nanmax(stdev_kdp['data'])    
-            self.add_field('KDP_STD',stdev_kdp)
-        phidp_filt['units']='deg'
-        phidp_filt['valid_min']=np.nanmin(phidp_filt['data'])
-        phidp_filt['valid_max']=np.nanmax(phidp_filt['data'])                
-        
-        self.add_field('Kdp',kdp)
-        self.add_field('Phidp_filt',phidp_filt)
-        
-class PyradCH(pyart.core.Radar):
+''' Inputs :
+-------------------------------------------------------------------------------
+  - filename : string:  Path of the radar PPI scan
+  - high_res : boolean: True if high_res (83.3 m. radial res)
+                        False if low_res (500 m. radial res)
+  - vol_scan : boolean: True if all PPI scans for all elevations at that time-
+                        step need to be loeaded
+                        False if only that given scan (specified by filename)
+                        needs to be loaded
+  - max_range : float : maximum range from the radar to be considered (default
+                        is infinity)
+  - min_range : float : minimum range from the radar to be considered (default
+                        is 10 km)
+                        
+'''
+
+class PyradCH(core.Radar):
     def __init__(self,filename, high_res, vol_scan=False, max_range=np.Inf):
         
         # Get directory name
@@ -496,8 +512,8 @@ class PyradCH(pyart.core.Radar):
                     fields[v]['data']=read_radar_data.row_stack(fields[v]['data'],data[v])
                     
         for v in varnames:
-            fields[v]['data']=np.ma.array(fields[v]['data'],mask=np.isnan(fields[v]['data']))
-                
+            fields[v]['data'] = np.ma.array(fields[v]['data'],mask=np.isnan(fields[v]['data']))
+            
         metadata={}
         
         [a,N_ranges]=fields[varnames[0]]['data'].shape
@@ -535,27 +551,27 @@ class PyradCH(pyart.core.Radar):
         for k in self.fields.keys():
             if k == 'range':
                 data = self.fields[k]['data']
-                self.fields[k]['data'] = np.vstack([data \
+                self.fields[k]['data'] = np.ma.vstack([data \
                 [:,n_gates*(i)] for i in  \
                 range(n_bins_initial/n_gates)]).T
-            elif k == 'Z': # Convert to linear
+            elif k in ['Z','ZV']: # Average in linear
                 data = 10*np.log10(self.fields[k]['data']) 
-                self.fields[k]['data'] = 10**(0.1*(np.vstack(\
+                self.fields[k]['data'] = 10**(0.1*(np.ma.vstack(\
                 [np.nanmean(data[:,n_gates*i:n_gates*(i+1)],axis=1) \
                 for i in range(n_bins_initial/n_gates)]).T))
-            elif k == 'ZDR':
+            elif k == 'ZDR': # Average in log
                 data = np.log10(self.fields[k]['data'])
-                self.fields[k]['data'] = 10**(np.vstack( \
+                self.fields[k]['data'] = 10**(np.ma.vstack( \
                 [np.nanmean(data[:,n_gates*i:n_gates*(i+1)],axis=1) \
                 for i in range(n_bins_initial/n_gates)]).T)
-            elif k == 'PHIDP':
+            elif k == 'PHIDP': # Don't average for phidp
                 data = self.fields[k]['data']
-                self.fields[k]['data'] = np.vstack([data \
+                self.fields[k]['data'] = np.ma.vstack([data \
                 [:,n_gates*(i)] for i in  \
                 range(n_bins_initial/n_gates)]).T
-            else:
+            else: # Average in original data
                 data = self.fields[k]['data']
-                self.fields[k]['data'] = np.vstack([np.nanmean(data \
+                self.fields[k]['data'] = np.ma.vstack([np.nanmean(data \
                 [:,n_gates*i:n_gates*(i+1)],axis=1) for i in  \
                 range(n_bins_initial/n_gates)]).T  
 
@@ -565,61 +581,62 @@ class PyradCH(pyart.core.Radar):
                 range(n_bins_initial/n_gates)])
         self.ngates = len(self.range['data'])
 
-    def estimate_KDP(self, method = 'vulpiani', minsize = 5, thresh_rhohv=0.65, max_discont = 90):
-        band = 'C'
-        dr = (self.range['data'][1] -  self.range['data'][0])/1000.
-
-        kdp = {}
-        kdp['data'] =  ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
-        if method == 'kalman':
-            stdev_kdp = {}
-            stdev_kdp['data'] = ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
-        phidp_filt = {}
-        phidp_filt['data'] =ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
-        
-        # Filter Psidp
-        idx_line = 0
-        for n in self.sweep_number['data']:
-            psidp_filt = filter_psidp(self.get_field(n,'PHIDP'), self.get_field(n,'RHO'),
-                         minsize, thresh_rhohv, max_discont)
-            if method == 'vulpiani':
-                a, b = estimate_kdp_vulpiani(psidp_filt, dr, windsize = 7, 
-                                                band = band)
-            elif method == 'kalman':
-                a,c, b = estimate_kdp_kalman(psidp_filt, dr, band)
-            dim = a.shape
-            if method == 'kalman':
-                stdev_kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = c
-            kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = a
-            phidp_filt['data'][idx_line:idx_line+dim[0],0:dim[1]] = b
-            
-            idx_line = idx_line + dim[0]
-        
-        kdp['units']='deg/km'
-        kdp['valid_min']=np.nanmin(kdp['data'])
-        kdp['valid_max']=np.nanmax(kdp['data'])    
-        
-        if method == 'kalman':
-            stdev_kdp['units']='deg/km'
-            stdev_kdp['valid_min']=np.nanmin(stdev_kdp['data'])
-            stdev_kdp['valid_max']=np.nanmax(stdev_kdp['data'])    
-            self.add_field('KDP_STD',stdev_kdp)
-        phidp_filt['units']='deg'
-        phidp_filt['valid_min']=np.nanmin(phidp_filt['data'])
-        phidp_filt['valid_max']=np.nanmax(phidp_filt['data'])                
-        
-        self.add_field('KDP',kdp)
-        self.add_field('PHIDP_FILT',phidp_filt)
-    
+#    def estimate_KDP(self, method = 'vulpiani', minsize = 5, thresh_rhohv=0.65, max_discont = 90):
+#        band = 'C'
+#        dr = (self.range['data'][1] -  self.range['data'][0])/1000.
+#
+#        kdp = {}
+#        kdp['data'] =  ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
+#        if method == 'kalman':
+#            stdev_kdp = {}
+#            stdev_kdp['data'] = ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
+#        phidp_filt = {}
+#        phidp_filt['data'] =ma.masked_array(np.zeros(self.fields['PHIDP']['data'].shape))*np.nan
+#        
+#        # Filter Psidp
+#        idx_line = 0
+#        for n in self.sweep_number['data']:
+#            psidp_filt = filter_psidp(self.get_field(n,'PHIDP'), self.get_field(n,'RHO'),
+#                         minsize, thresh_rhohv, max_discont)
+#            if method == 'vulpiani':
+#                a, b = estimate_kdp_vulpiani(psidp_filt, dr, windsize = 7, 
+#                                                band = band)
+#            elif method == 'kalman':
+#                a,c, b = estimate_kdp_kalman(psidp_filt, dr, band)
+#            dim = a.shape
+#            if method == 'kalman':
+#                stdev_kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = c
+#            kdp['data'][idx_line:idx_line+dim[0],0:dim[1]] = a
+#            phidp_filt['data'][idx_line:idx_line+dim[0],0:dim[1]] = b
+#            
+#            idx_line = idx_line + dim[0]
+#        
+#        kdp['units']='deg/km'
+#        kdp['valid_min']=np.nanmin(kdp['data'])
+#        kdp['valid_max']=np.nanmax(kdp['data'])    
+#        
+#        if method == 'kalman':
+#            stdev_kdp['units']='deg/km'
+#            stdev_kdp['valid_min']=np.nanmin(stdev_kdp['data'])
+#            stdev_kdp['valid_max']=np.nanmax(stdev_kdp['data'])    
+#            self.add_field('KDP_STD',stdev_kdp)
+#        phidp_filt['units']='deg'
+#        phidp_filt['valid_min']=np.nanmin(phidp_filt['data'])
+#        phidp_filt['valid_max']=np.nanmax(phidp_filt['data'])                
+#        
+#        self.add_field('KDP',kdp)
+#        self.add_field('PHIDP_FILT',phidp_filt)
+#    
     def snr_threshold(self,threshold = 8):
         threshold_func = lambda r: SENSITIVITY_FACTOR + RADAR_CONSTANT + threshold + 20*np.log10(r)
         range_mat = np.tile(self.range['data'],(self.fields['Z']['data'].shape[0],1))/1000.
-        mask = np.array(self.fields['Z']['data'])<threshold_func(range_mat)
+        mask_sens = np.array(self.fields['Z']['data'])<threshold_func(range_mat)
         for k in self.fields.keys():
-            self.fields[k]['data'].mask = mask
+            if k != 'range':
+                self.fields[k]['data'].mask += mask_sens
 
     def correct_velocity(self):
-        corr_vel=pyart.correct.dealias_region_based(self,interval_splits=3,vel_field='V',rays_wrap_around=True)
+        corr_vel=correct.dealias_region_based(self,interval_splits=3,vel_field='V',rays_wrap_around=True)
         corr_vel['units']='m/s'
         corr_vel.pop('standard_name')
         corr_vel['valid_min']=np.nanmin(corr_vel['data'])
@@ -648,11 +665,11 @@ if __name__=='__main__':
 #    
 #    display = pyart.graph.RadarDisplay(a, shift=(0.0, 0.0))
 #    display.plot('v_radial', 0, colorbar_flag=True,title="v_radial")
-#    
-    plt.close('all')
-    filename='/ltedata/MeteoSwiss_Full_Radar_Data_LowRes/PLD14098/PLD1409805007U.005.h5'
-    r=PyradCH('/ltedata/MeteoSwiss_Full_Radar_Data_LowRes/PLD14098/PLD1409805007U.005.h5',high_res=False,vol_scan=False)
-    r.snr_threshold(8)
+##    
+#    plt.close('all')
+#    filename='/ltedata/MeteoSwiss_Full_Radar_Data_LowRes/PLD14098/PLD1409805007U.005.h5'
+#    r=PyradCH('/ltedata/MeteoSwiss_Full_Radar_Data_LowRes/PLD14098/PLD1409805007U.005.h5',high_res=False,vol_scan=False)
+#    r.snr_threshold(8)
 #    print(r.range['data'])
 #    r.average(1)
     r.estimate_KDP(method='vulpiani')
@@ -661,7 +678,7 @@ if __name__=='__main__':
     
 #    rad_instance.correct_velocity()
 #    plt.figure()
-    display = pyart.graph.RadarDisplay(rad, shift=(0.0, 0.0))
+    display = graph.RadarDisplay(rad, shift=(0.0, 0.0))
     plt.figure()
     display.plot('KDP', 0, colorbar_flag=True,title="V_corr",vmin=-1,vmax=1.5) 
 

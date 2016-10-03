@@ -140,9 +140,8 @@ def compare_operator_with_GPM(simulated_GPM_swath,GPM_filename):
     ZH_m_grd=ZH_gpm[j,k,binNoClutter]
     ZH_m_grd[ZH_m_grd<-1000]=float('nan')
     # GPM seems to measure lots of noise, so we apply a mask which corresponds to
-    # all pixels where GPM detected some signal with its correction algorithm
-    mask = gpm_f[group]['SLV']['zFactorCorrectedNearSurface'][:]
-    mask = mask < -1000
+    # all pixels classified as precip by gpm
+    mask = gpm_f[group]['PRE']['flagPrecip'][:]
     ZH_m_grd[mask] = np.nan
 
     ZH_ground={}
@@ -292,13 +291,13 @@ def test_accuracy(GPM_file,band):
     return
     
 if __name__=='__main__':
-#    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
-#    az,elev,rang,coords_GPM = get_GPM_angles(gpm_file,'Ku')
+    gpm_file = '/media/wolfensb/Storage/Dropbox/GPM_Analysis/DATA/FILES/GPM_DPR/2014-08-13-02-28.HDF5'
+    az,elev,rang,coords_GPM = get_GPM_angles(gpm_file,'Ku')
 #    S,H,E = get_GPM_refraction(90,47,)
     
-    import pickle
-    u=pickle.load(open('/media/wolfensb/Storage/cosmo_pol/mom1.pz','rb'))
-    cl = SimulatedGPM(a,[81,49],'Ku')
+#    import pickle
+#    u=pickle.load(open('/media/wolfensb/Storage/cosmo_pol/mom1.pz','rb'))
+#    cl = SimulatedGPM(a,[81,49],'Ku')
 #    a = SimulatedGPM(u,az.shape,'Ku')
 #    uu = compare_operator_with_GPM(a,gpm_file)
 #    g,a=SimulatedGPM_Swath(u['r'],u['s'],u['b'])

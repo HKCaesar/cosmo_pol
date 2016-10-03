@@ -22,7 +22,7 @@ import copy
 import cosmo_pol.pycosmo as pycosmo
 from cosmo_pol.radar.pyart_wrapper import PyradRadop,PyradRadopVProf, RadarDisplay
 from cosmo_pol.utilities import cfg, utilities,tictoc
-from cosmo_pol.constants import constants
+from cosmo_pol.constants.constants import constants
 from cosmo_pol.scatter import scattering_sz
 from cosmo_pol.interpolation import interpolation
 from cosmo_pol.doppler import doppler_sz
@@ -444,8 +444,14 @@ if __name__=='__main__':
 #    import glob
     
     files_c = pycosmo.get_model_filenames('/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/')
+    
+    
 #    files_c2 = pycosmo.get_model_filenames('/ltedata/COSMO/Multifractal_analysis/case2014040802_TWOMOM/')    
     a=RadarOperator(options_file='/storage/cosmo_pol/option_files/CH_PPI_dole.yml', diagnostic_mode=True) 
+    a.load_model_file(files_c['h'][30],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
+    a.config.CONFIG['doppler']['scheme'] = 3
+    r=a.get_RHI(azimuths=0,elevations=[90])
+    
 #    a.load_model_file(files_c['h'][30],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
 #    a.config.CONFIG['integration']['nh_GH']=1
 #    a.config.CONFIG['integration']['nv_GH']=1
@@ -462,31 +468,31 @@ if __name__=='__main__':
 #    plt.figure()
 #    plt.imshow(r2.get_field(0,'ZH'))    
         
-    a.load_model_file(files_c['h'][40],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
-    tictoc.tic()
-    a.config.CONFIG['integration']['scheme'] = 1
-    a.config.CONFIG['integration']['weight_threshold']=1.
-    r1=a.get_RHI(azimuths=0,elevations = [2])
-    a.config.CONFIG['integration']['weight_threshold']=0.9
-    a.config.CONFIG['integration']['scheme'] = 2
-    r2=a.get_RHI(azimuths=0,elevations = [2])
-    a.config.CONFIG['integration']['scheme'] = 3.5
-    r3=a.get_RHI(azimuths=0,elevations = [2])        
-    a.config.CONFIG['integration']['weight_threshold']=0.99
-    a.config.CONFIG['integration']['scheme'] = 4
-    r4=a.get_RHI(azimuths=0,elevations = [2])     
-    a.config.CONFIG['integration']['scheme'] = 5
-    a.config.CONFIG['integration']['nv_GH']=13
-    a.config.CONFIG['integration']['weight_threshold']=0.9
-    r5=a.get_RHI(azimuths=0,elevations = [2])  
-      
-    import matplotlib.pyplot as plt
-    plt.plot(r1.get_field(0,'ZH').data.ravel())
-    plt.plot(r2.get_field(0,'ZH').data.ravel())
-    plt.plot(r3.get_field(0,'ZH').data.ravel())
-    plt.plot(r4.get_field(0,'ZH').data.ravel())
-    plt.plot(r5.get_field(0,'ZH').data.ravel())
-    plt.legend(['1','2','3','4','5'])
+#    a.load_model_file(files_c['h'][40],cfilename = '/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
+#    tictoc.tic()
+#    a.config.CONFIG['integration']['scheme'] = 6
+#    a.config.CONFIG['integration']['weight_threshold']=1.
+#    r1=a.get_RHI(azimuths=0,elevations = [2])
+#    a.config.CONFIG['integration']['weight_threshold']=0.9
+#    a.config.CONFIG['integration']['scheme'] = 2
+#    r2=a.get_RHI(azimuths=0,elevations = [2])
+#    a.config.CONFIG['integration']['scheme'] = 1
+#    r3=a.get_RHI(azimuths=0,elevations = [2])        
+#    a.config.CONFIG['integration']['weight_threshold']=0.999
+#    a.config.CONFIG['integration']['scheme'] = 4
+#    r4=a.get_RHI(azimuths=0,elevations = [2])     
+#    a.config.CONFIG['integration']['scheme'] = 5
+#    a.config.CONFIG['integration']['nv_GH']=13
+#    a.config.CONFIG['integration']['weight_threshold']=0.9
+#    r5=a.get_RHI(azimuths=0,elevations = [2])  
+#      
+#    import matplotlib.pyplot as plt
+#    plt.plot(r1.get_field(0,'ZH').data.ravel())
+#    plt.plot(r2.get_field(0,'ZH').data.ravel())
+#    plt.plot(r3.get_field(0,'ZH').data.ravel())
+#    plt.plot(r4.get_field(0,'ZH').data.ravel())
+#    plt.plot(r5.get_field(0,'ZH').data.ravel())
+#    plt.legend(['1','2','3','4','5'])
 #    
 #    r1=a.get_PPI(elevations=5)
 #    

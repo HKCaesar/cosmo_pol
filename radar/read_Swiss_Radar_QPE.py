@@ -12,6 +12,24 @@ import netCDF4
 
 RADAR_POS=[(497100.4, 142465.1),(603688.7, 135469.1),(681202.8, 237606.0),(707957.0, 99764.5)] # Dole, Plaine Morte, Albis, Monte Lema
 
+#Construct the lookup table to map 8 bit integer value to rainfall rate in
+#mm/hr
+rr_lookup_table_8 = np.zeros((256,))*float('nan');
+rr_lookup_table_8[1] = 0
+rr_lookup_table_8[2:21] = np.arange(0.1,1.05,0.05)
+rr_lookup_table_8[21] = 1.1
+rr_lookup_table_8[22:30] = np.arange(1.25,2.05,0.1)
+rr_lookup_table_8[30] = 2
+rr_lookup_table_8[31:168] = np.arange(3.05,140.05,1)
+rr_lookup_table_8[168:237] = np.arange(141.05,210.05,1)
+rr_lookup_table_8[237:251] = np.arange(210.05,350.05,10);
+
+#Construct the lookup table to map 4 bit integer value to rainfall rate in
+#mm/hr
+rr_lookup_table_4 = np.zeros((16,))*float('nan');
+rr_lookup_table_4[0:]=[0,0.16,0.25,0.4,0.63,1.,1.6,2.5,4.,6.3,10,16,25,40,63,100]
+
+
 def CH1903toWGS84(x,y):
     # First, conversion from the military to the civillian system:
     y_p = (y - 600000)/1000000;
@@ -34,30 +52,31 @@ def CH1903toWGS84(x,y):
     return lat,lon
 
 
-def read_8bit_meteoswiss( filename, max_radar_radius ):
+def read_mosaic_meteoswiss( filename, max_radar_radius ):
       
     data = mahotas.imread(filename)
     
-    # Extract only the horizontal information:
-    data = data[-640:, 0:710];
+    if 'VOGG' in filename:
+        lut=rr_lookup_table_4
+        
+        # Extract only the horizontal information:
+        data = data[-538:, 0:610];
+        data[data==255]=0
+         # The co-ordinates in CH1903 form:
+        y = np.linspace(297.5, 906.5,610)*1000;
+        x = np.linspace(437.5, -99.5,538)*1000;
+
+    else:
+        lut=rr_lookup_table_8
+        
+        # Extract only the horizontal information:
+        data = data[-640:, 0:710];
+         # The co-ordinates in CH1903 form:
+        y = np.linspace(255, 965, 710)*1000;
+        x = np.linspace(480, -160,  640)*1000;
     
-     # The co-ordinates in CH1903 form:
-    y = np.linspace(255, 965, 710)*1000;
-    x = np.linspace(480, -160,  640)*1000;
     
-    #Construct the lookup table to map 8 bit integer value to rainfall rate in
-    #mm/hr
-    rr_lookup_table = np.zeros((256,))*float('nan');
-    rr_lookup_table[1] = 0
-    rr_lookup_table[2:21] = np.arange(0.1,1.05,0.05)
-    rr_lookup_table[21] = 1.1
-    rr_lookup_table[22:30] = np.arange(1.25,2.05,0.1)
-    rr_lookup_table[30] = 2
-    rr_lookup_table[31:168] = np.arange(3.05,140.05,1)
-    rr_lookup_table[168:237] = np.arange(141.05,210.05,1)
-    rr_lookup_table[237:251] = np.arange(210.05,350.05,10);
-    
-    rainfall_rates = rr_lookup_table[data];   #note that this means that 255 is incorrectly mapped, but still maps to a NaN, so not relevant
+    rainfall_rates = lut[data];   #note that this means that 255 is incorrectly mapped, but still maps to a NaN, so not relevant
 
     # convert to WGS co-ordinates:
     Y,X=np.meshgrid(y,x)

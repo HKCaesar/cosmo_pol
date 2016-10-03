@@ -25,7 +25,9 @@ def select(data):
     return data_copy
     
 EVENT = '20150813'
-all_files = glob.glob('/storage/cosmo_pol/validation/data/'+EVENT+'/radar/ZDR*.npy')
+SCHEME = '1mom'
+
+all_files = glob.glob('/storage/cosmo_pol/validation/DATA/CH/'+EVENT+'/radar/ZDR*.npy')
 
 radar = {'ZH':[],'KDP':[],'ZDR':[]}
 simul = {'ZH':[],'KDP':[],'ZDR':[]}
@@ -36,9 +38,9 @@ for f in all_files:
         radar['ZDR'].extend(np.load(f).ravel())
         radar['KDP'].extend(np.load(f.replace('ZDR','KDP')).ravel())
 
-        simul['ZH'].extend(np.load(f.replace('radar','model_1mom').replace('ZDR','ZH')).ravel())
-        simul['ZDR'].extend(np.load(f.replace('radar','model_1mom')).ravel())
-        simul['KDP'].extend(np.load(f.replace('radar','model_1mom').replace('ZDR','KDP')).ravel())
+        simul['ZH'].extend(np.load(f.replace('radar','model_'+SCHEME).replace('ZDR','ZH')).ravel())
+        simul['ZDR'].extend(np.load(f.replace('radar','model_'+SCHEME)).ravel())
+        simul['KDP'].extend(np.load(f.replace('radar','model_'+SCHEME).replace('ZDR','KDP')).ravel())
     except:
         
         pass          
@@ -76,10 +78,10 @@ plt.plot(0.5*(ZH_bins[0:-1]+ZH_bins[1:]),pts_mean_simul+pts_stdev_simul,'--g')
 plt.plot(0.5*(ZH_bins[0:-1]+ZH_bins[1:]),pts_mean_simul-pts_stdev_simul,'--g')   
 plt.grid()
 plt.xlabel('ZH [dBZ]')
-plt.title('Heavy rainfall event: 5 Nov. 2014')
+plt.title('Heavy rainfall event: 13 August 2015')
 plt.ylabel(r'Average KDP within ZH bin [$^{\circ}$/km]')
 plt.legend(['Mt. Lema radar','Simulation'])
-plt.savefig('./KDPvsZH_hist_'+EVENT+'.pdf',dpi=200)
+plt.savefig('./COMPARISON/CH/'+SCHEME+'/KDPvsZH_hist_'+EVENT+'.pdf',dpi=200)
 
 plt.figure()
 pts_mean_rad = np.zeros((len(ZH_bins)-1,))
@@ -104,9 +106,9 @@ plt.plot(0.5*(ZH_bins[0:-1]+ZH_bins[1:]),pts_mean_simul-pts_stdev_simul,'--g')
 plt.grid()
 plt.xlabel('ZH [dBZ]')
 plt.ylabel(r'Average ZDR within ZH bin [dB]')
-plt.title('Heavy rainfall event: 5 Nov. 2014')
+plt.title('Heavy rainfall event: 13 August 2015')
 plt.legend(['Mt. Lema radar','Simulation'])
-plt.savefig('./ZDRvsZH_hist_'+EVENT+'.pdf',dpi=200)
+plt.savefig('./COMPARISON/CH/'+SCHEME+'/ZDRvsZH_hist_'+EVENT+'.pdf',dpi=200)
 
 
 plt.figure()
@@ -115,10 +117,10 @@ plt.hist(2*simul2['KDP'],bins=50,alpha=0.5,normed=True)
 plt.xlim([-1,5])
 plt.legend(['Radar','Simulation'])
 plt.grid()
-plt.title('Heavy rainfall event: 5 Nov. 2014')
+plt.title('Heavy rainfall event: 13 August 2015')
 plt.ylabel('Density')
 plt.xlabel(r'KDP [$^{\circ}$/km]')
-plt.savefig('./KDP_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
+plt.savefig('./COMPARISON/CH/'+SCHEME+'/KDP_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
 
 
 plt.figure()
@@ -127,18 +129,18 @@ plt.hist(simul2['ZDR'],bins=50,alpha=0.5,normed=True)
 plt.xlim([-1,5])
 plt.legend(['Mt. Lema radar','Simulation'])
 plt.grid()
-plt.title('Heavy rainfall event: 5 Nov. 2014')
+plt.title('Heavy rainfall event: 13 Aug. 2015')
 plt.ylabel('Density')
 plt.xlabel(r'ZDR [dB]')
-plt.savefig('./ZDR_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
+plt.savefig('./COMPARISON/CH/'+SCHEME+'/ZDR_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
 
 plt.figure()
 plt.hist(radar2['ZH'],bins=50,alpha=0.5,normed=True)
 plt.hist(simul2['ZH'],bins=50,alpha=0.5,normed=True)
 plt.legend(['Mt. Lema radar','Simulation'])
 plt.grid()
-plt.title('Heavy rainfall event: 5 Nov. 2014')
+plt.title('Heavy rainfall event: 13 Aug. 2015')
 plt.ylabel('Density')
 plt.xlabel(r'ZH [dBZ]')
-plt.savefig('./ZH_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
+plt.savefig('./COMPARISON/CH/'+SCHEME+'/ZH_hist_'+EVENT+'.pdf',dpi=200,bbox_inches='tight')
 

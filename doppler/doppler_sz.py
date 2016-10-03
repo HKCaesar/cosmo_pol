@@ -82,7 +82,10 @@ def get_doppler_velocity(list_beams, lut_sz = 0):
 
             # Average radial velocity for all sub-beams
             rvel_avg=utilities.nansum_arr(rvel_avg,(proj_wind)*beam.GH_weight)
-#  
+            
+        # We need to divide by the total weights of valid beams at every bin
+        rvel_avg/=sum_weights
+        
     elif doppler_scheme == 3:
         rvel_avg=np.zeros(len_beams,)
         doppler_spectrum=np.zeros((len_beams,len(constants.VARRAY)))
@@ -97,10 +100,7 @@ def get_doppler_velocity(list_beams, lut_sz = 0):
         except:
             rvel_avg*=float('nan')
             
-    if doppler_scheme == 1 or doppler_scheme == 2: # For schemes 1 and 2 where there is no computation of the doppler spectrum
-        # We need to divide by the total weights of valid beams at every bin
-        rvel_avg/=sum_weights
-        
+
     ###########################################################################    
     # Get mask
     # This mask serves to tell if the measured point is ok, or below topo or above COSMO domain
@@ -295,7 +295,10 @@ def get_doppler_spectrum(beam, list_hydrom, lut_sz):
                           elev[i],beam.values['U'][i],
                           beam.values['V'][i],beam.values['W'][i],rho_corr[i]) 
             try:
-                refl[i,idx]=doppler_c.get_refl(len(idx),Da, Db,D,rcs,N0,mu,lambdas,nu,step_D,D_min)[1]
+                refl[i,idx] = doppler_c.get_refl(len(idx),Da, 
+                                Db,D,rcs,N0,mu,lambdas,nu,step_D,D_min)[1]
+                wavelength = constants.WAVELENGTH
+                refl[i,idx] *= wavelength**4/(np.pi**5*constants.KW**2)
             except:
                 print('An error occured in the Doppler spectrum calculation...')
                 raise

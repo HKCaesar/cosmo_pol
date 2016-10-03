@@ -170,7 +170,7 @@ def get_pol_from_sz(sz):
     
     # Vertical reflectivity
     radar_xsect_v = 2*np.pi*(sz[:,0]+sz[:,1]+sz[:,2]+sz[:,3])
-    z_v=wavelength**4/(np.pi**5*constants.KW**2)*radar_xsect_v 
+    z_v = wavelength**4/(np.pi**5*constants.KW**2)*radar_xsect_v 
     
     # Differential reflectivity
     zdr=radar_xsect_h/radar_xsect_v

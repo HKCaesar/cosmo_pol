@@ -27,13 +27,18 @@ tableName_MXPOL='ltedb_schema.mxpol'
 tableName_CH='ltedb_schema.ch_radar'
 dbName='ltedb'
 
-folders_mxpol=['/ltedata/HYMEX/SOP_2012/Radar/Proc_data/2012/','/ltedata/HYMEX/SOP_2013/Radar/Proc_data/2013/',\
+FOLDERS_MXPOL=['/ltedata/HYMEX/SOP_2012/Radar/Proc_data/2012/','/ltedata/HYMEX/SOP_2013/Radar/Proc_data/2013/',\
 '/ltedata/Davos_2014/Radar/Proc_data/','/ltedata/Davos_2009-2010/MXPOL/Proc_data/','/ltedata/Payerne_2014/Radar/Proc_data/2014/',\
 '/ltedata/CLACE2014/Radar/Proc_data/2014/']
+
+FOLDERS_MXPOL_VERT=['/ltedata/HYMEX/SOP_2012/Radar/Proc_data_level2/2012/','/ltedata/HYMEX/SOP_2013/Radar/Proc_data_level2/2013/',\
+'/ltedata/Davos_2014/Radar/Proc_data_level2/','/ltedata/Davos_2009-2010/MXPOL/Proc_data_level2/','/ltedata/Payerne_2014/Radar/Proc_data_level2/2014/',\
+'/ltedata/CLACE2014/Radar/Proc_data_level2/2014/']
+
 CAMPAIGNS=['Hymex_2012','Hymex_2013','Davos_2014','Davos_2009-2010','Payerne_2014','Clace_2014']
 
 
-folders_CH=['/ltedata/MeteoSwiss_Full_Radar_Data_hail/','/ltedata/MeteoSwiss_Full_Radar_Data/',
+FOLDERS_CH=['/ltedata/MeteoSwiss_Full_Radar_Data_hail/','/ltedata/MeteoSwiss_Full_Radar_Data/',
             '/ltedata/MeteoSwiss_Full_Radar_Data_LowRes/']
 ELEVATION_ANGLES_CH=[-0.2,0.4,1,1.6,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,11,13,16,20,25,30,35,40]
 
@@ -125,7 +130,7 @@ class CH_RADAR_db():
              ANGLE FLOAT)"""%(tableName_CH)
         self.cur.execute(sql)
         # Vertical profiles
-        for i,f in enumerate(folders_CH):
+        for i,f in enumerate(FOLDERS_CH):
             for root, subFolders, files in os.walk(f):
                 for filename in fnmatch.filter(files, 'P*.h5'):
                     print(filename)
@@ -244,7 +249,7 @@ class MXPOL_db():
              ANGLE FLOAT)"""%(tableName_MXPOL)
         self.cur.execute(sql)
         # Vertical profiles
-        for i,f in enumerate(folders_mxpol):
+        for i,f in enumerate(FOLDERS_MXPOL):
             for root, subFolders, files in os.walk(f):
                 for filename in fnmatch.filter(files, 'MXPol-polar-*.nc'):
                     if 'RHI' in filename:
@@ -258,7 +263,7 @@ class MXPOL_db():
                     angle=re.findall(r"-([0-9]{3})_",filename)[0]
                     angle=int(angle)
                     pathFile=root+'/'+filename  
-                        
+
                     sql = "INSERT INTO %s(FILEPATH,CAMPAIGN,DATE,SCAN_TYPE,ANGLE) \
                        SELECT '%s', '%s', '%s', '%s','%f' WHERE NOT EXISTS (SELECT FILEPATH FROM %s WHERE FILEPATH = '%s')" % \
                     (tableName_MXPOL, pathFile, CAMPAIGNS[i], currentTimeString, scan_type, angle,
@@ -267,13 +272,31 @@ class MXPOL_db():
                     self.cur.execute(sql)
                     self.db.commit()
                     print '-'
+        for i,f in enumerate(FOLDERS_MXPOL_VERT):
+            for root, subFolders, files in os.walk(f):
+                for filename in fnmatch.filter(files, 'MXPol-profile-*.nc'):
+                    strdate=re.findall(r"([0-9]{8}-[0-9]{6})",filename)
+                    currentTimeString=str(datetime.strptime(strdate[0],'%Y%m%d-%H%M%S'))
 
+                    scan_type='V_DOPPLER'
+                    angle = int(90)
+                    pathFile=root+'/'+filename  
+                        
+                    sql = "INSERT INTO %s(FILEPATH,CAMPAIGN,DATE,SCAN_TYPE,ANGLE) \
+                       SELECT '%s', '%s', '%s', '%s','%f' WHERE NOT EXISTS (SELECT FILEPATH FROM %s WHERE FILEPATH = '%s')" % \
+                    (tableName_MXPOL, pathFile, CAMPAIGNS[i], currentTimeString, scan_type, angle,
+                     tableName_MXPOL,pathFile)
+                    print(sql)
+                    self.cur.execute(sql)
+                    self.db.commit()
+                    print '-'
+                    
         self.db.close()
         
 
 # date=['2014-05-13 00:00:00']
 if __name__=='__main__':
-    d=CH_RADAR_db()
+    d=MXPOL_db()
 #    p = d.query(date=['2015-08-13 12:00:00'],radar='L', angle=1)
 #    print(p)
     

@@ -8,6 +8,8 @@ import numpy as np
 import pyproj
 import pickle
 import scipy.interpolate as interp
+from SpectralToolbox import HeterogeneousSparseGrids as HSG
+from SpectralToolbox import Spectral1D, SparseGrids
 
 import interpolation_c
 import cosmo_pol.pycosmo as pycosmo
@@ -75,7 +77,7 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         pts_ver, weights_ver=np.polynomial.hermite.hermgauss(nv_GH)
         pts_ver=pts_ver*sigma
     
-        weights = np.outer(weights_hor,weights_ver)
+        weights = np.outer(weights_hor*sigma,weights_ver*sigma)
         weights *= np.abs(np.cos(pts_ver))
         
         sum_weights = np.sum(weights.ravel())
@@ -135,28 +137,28 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         
         sum_weights = np.sum(weights.ravel())
         beam_broadening=nh_GH>1 or nv_GH>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)        
-
-    elif integration_scheme == 3.5: # Gauss-Legendre with real-antenna weighting
-        nh_GH = int(cfg.CONFIG['integration']['nh_GH'])
-        nv_GH = int(cfg.CONFIG['integration']['nv_GH'])
-        
-        antenna = np.genfromtxt(cfg.CONFIG['integration']['antenna_diagram'],delimiter=',')
-    
-        angles =  antenna[:,0]
-        power_sq =  (10**(0.1*antenna[:,1]))**2
-        bounds = np.max(angles)
-
-        pts_hor=np.linspace(-bounds,bounds,nh_GH)
-     
-        pts_ver=np.linspace(-bounds,bounds,nv_GH)
-        
-        power_sq_pts = (utilities.vector_1d_to_polar(angles,power_sq,pts_hor,pts_ver).T)
-        weights = power_sq_pts
-        weights *= np.abs(np.cos(pts_ver))
-        weights *= 2*bounds
-        
-        sum_weights = np.sum(weights.ravel())
-        beam_broadening=nh_GH>1 or nv_GH>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)       
+#
+#    elif integration_scheme == 3.5: # Gauss-Legendre with real-antenna weighting
+#        nh_GH = int(cfg.CONFIG['integration']['nh_GH'])
+#        nv_GH = int(cfg.CONFIG['integration']['nv_GH'])
+#        
+#        antenna = np.genfromtxt(cfg.CONFIG['integration']['antenna_diagram'],delimiter=',')
+#    
+#        angles =  antenna[:,0]
+#        power_sq =  (10**(0.1*antenna[:,1]))**2
+#        bounds = np.max(angles)
+#
+#        pts_hor=np.linspace(-bounds,bounds,nh_GH)
+#     
+#        pts_ver=np.linspace(-bounds,bounds,nv_GH)
+#        
+#        power_sq_pts = (utilities.vector_1d_to_polar(angles,power_sq,pts_hor,pts_ver).T)
+#        weights = power_sq_pts
+#        weights *= np.abs(np.cos(pts_ver))
+#        weights *= 2*bounds
+#        
+#        sum_weights = np.sum(weights.ravel())
+#        beam_broadening=nh_GH>1 or nv_GH>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)       
         
     elif integration_scheme == 4: # Real antenna, for testing only
         
@@ -182,9 +184,10 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         angles =  antenna[:,0]
         power_sq =  (10**(0.1*antenna[:,1]))**2
         bounds = np.max(angles)
-#        
+        
         antenna_fit = interp.interp1d(angles,power_sq,fill_value=0)
-        antenna_fit_weighted = interp.interp1d(angles,power_sq*np.cos(np.abs(angles)),fill_value=0)
+        antenna_fit_weighted = interp.interp1d(angles,
+               power_sq*np.cos(np.abs(np.deg2rad(angles))),fill_value=0)
 
         pts_hor, weights_hor = quadrature.get_points_and_weights(antenna_fit,-bounds,bounds,nh_GA)
         pts_ver, weights_ver = quadrature.get_points_and_weights(antenna_fit_weighted,-bounds,bounds,nv_GA)        
@@ -192,18 +195,46 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         weights = np.outer(weights_hor,weights_ver) 
         sum_weights = np.sum(weights.ravel())
         
-        beam_broadening=nh_GA>1 or nv_GA>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)       
+        beam_broadening=nh_GA>1 or nv_GA>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)   
         
-    # Keep only weights above threshold
-    weights_sort = np.sort(np.array(weights).ravel())[::-1] # Desc. order
-    
-    weights_cumsum = np.cumsum(weights_sort/sum_weights)
-    weights_cumsum[-1] = 1. # Avoid floating precision issues
-    idx_above = np.where(weights_cumsum>=cfg.CONFIG['integration']['weight_threshold'])[0][0]
+    elif integration_scheme == 6: # Sparse Gauss-Hermite
+        nh_GH = int(cfg.CONFIG['integration']['nh_GH'])
+        nv_GH = int(cfg.CONFIG['integration']['nv_GH'])
+        # Get GH points and weights
+        sigma=bandwidth_3dB/(2*np.sqrt(2*np.log(2)))
+                
+        grid = SparseGrids.SparseGrid(dim=2,qrule=SparseGrids.GQN,
+                                      k=int(cfg.CONFIG['integration']['nh_GH']),
+                                      sym=True)  
+        
+        XF,W = grid.sparseGrid()  
+        W = np.squeeze(W)
+        XF *= sigma
+        
+        weights = W
+        weights *= np.abs(np.cos(XF[:,1])) * sigma
+        
+        pts_hor = XF[:,0] + azimuth
+        pts_ver = XF[:,1] + elevation
+        list_pts = [pt for pt in zip(pts_hor,pts_ver)]
 
-    threshold = weights_sort[idx_above]
-    sum_weights = np.sum(weights_sort[weights_sort>=threshold])
+        sum_weights = np.sum(weights)
+        
+        beam_broadening=nh_GH>1 or nv_GH>1 # Boolean for beam-broadening (if only one GH point : No beam-broadening)           
     
+    # Keep only weights above threshold
+    if integration_scheme != 6:
+        weights_sort = np.sort(np.array(weights).ravel())[::-1] # Desc. order
+        
+        weights_cumsum = np.cumsum(weights_sort/sum_weights)
+        weights_cumsum[-1] = 1. # Avoid floating precision issues
+        idx_above = np.where(weights_cumsum>=cfg.CONFIG['integration']['weight_threshold'])[0][0]
+    
+        threshold = weights_sort[idx_above]
+        sum_weights = np.sum(weights_sort[weights_sort>=threshold])
+    else:
+        threshold = -np.inf
+            
     # Get beams
     list_beams = []     
     # create vector of bin positions
@@ -211,7 +242,7 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
                           cfg.CONFIG['radar']['range'],
                           cfg.CONFIG['radar']['radial_resolution'])       
                           
-    if integration_scheme != 2:
+    if integration_scheme not in [2,6]: # Only regular grids!
         
         if list_refraction == 0: # Calculate refraction for vertical GH points
             list_refraction=[]
@@ -242,7 +273,7 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
                         if k == 0: # Do this only for the first variable (same mask for all variables)
                             mask_beam = np.zeros((len(bi)))
                             mask_beam[bi == -9999] = -1 # Means that the interpolated point is above COSMO domain
-                            mask_beam[np.isnan(bi)] = 1  # NaN means that the interpolated point is below COSMO terrain
+                            mask_beam[np.isnan(bi)] = 1  # Means that the interpolated point is below COSMO terrain
                         bi[mask_beam!=0] = float('nan') # Assign NaN to all missing data
                         dic_beams[keys[k]] = bi # Create dictionary
                     list_beams.append(Beam(dic_beams, mask_beam, lats, lons, list_refraction[j][0],list_refraction[j][1],list_refraction[j][2],pt, weight))        
@@ -255,6 +286,7 @@ def get_profiles_GH(dic_variables, azimuth, elevation, radar_range=0,N=0, list_r
         
         for i in range(len(list_pts)):
             if weights[i] >= threshold:
+
                 if cfg.CONFIG['radar']['type'] == 'GPM':
                     S,H, E = atm_refraction.get_GPM_refraction(list_pts[i][1])
                 else:
@@ -348,13 +380,27 @@ if __name__=='__main__':
     import cosmo_pol.pycosmo as pc
     import cosmo_pol.utilities.cfg as cfg
     cfg.init('/storage/cosmo_pol/option_files/CH_PPI_dole.yml') # Initialize options with 'options_radop.txt'
-    cfg.CONFIG['integration']['scheme'] = 5
+    cfg.CONFIG['integration']['scheme'] = 6
+    cfg.CONFIG['integration']['weight_threshold'] = 1.
 #    from rad_wind import get_doppler_velocity
     file_h=pc.open_file('/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00124000')
 
     dic_vars=pc.get_variables(file_h,['U','V','W','T'],get_proj_info=True,shared_heights=True,assign_heights=True,c_file='/ltedata/COSMO/Multifractal_analysis/case2014040802_ONEMOM/lfsf00000000c')
     list_GH_pts = get_profiles_GH(dic_vars,0, 3)
 
+    a = integrate_GH_pts(list_GH_pts)
+    cfg.CONFIG['integration']['scheme'] = 1
+    cfg.CONFIG['integration']['weight_threshold'] = 1.
+    
+    plt.plot(a.values['T'])
+    
+    
+    list_GH_pts = get_profiles_GH(dic_vars,0, 3)
+
+    a = integrate_GH_pts(list_GH_pts)    
+
+    
+    plt.plot(a.values['T'])
     
 #    results1=[]
 #    results2=[]
